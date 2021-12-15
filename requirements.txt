@@ -1,0 +1,9 @@
+astropy
+mypy
+pyserial
+PyOpenGL
+PyOpenGL_accelerate
+PyOpenGL-Demo
+pyyaml
+scipy
+sgp4

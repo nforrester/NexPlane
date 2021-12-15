@@ -1,0 +1,42 @@
+digraph diagram {
+    subgraph cluster_diagram {
+        label="NexPlane System Diagram";
+        color=white;
+        fontsize=25;
+
+        Airplanes -> antenna;
+        antenna -> adsb;
+        adsb -> dump1090;
+        dump1090 -> nexplane;
+
+        Satellites -> CelesTrak;
+        CelesTrak -> files;
+        files -> tle_proc;
+        tle_proc -> nexplane;
+
+        nexplane -> bridge;
+        bridge -> nexplane;
+        bridge -> nexstar;
+        nexstar -> bridge;
+
+        CelesTrak [label="celestrak.com", shape=box, style=filled, color=black, fillcolor=lightblue];
+        antenna [label="1090MHz Antenna", shape=box, style=filled, color=black, fillcolor=grey];
+        adsb [label="ADS-B Receiver", shape=box, style=filled, color=black, fillcolor=grey];
+        nexplane [label="nexplane.py" style=filled, color=black, fillcolor=lightgreen];
+        bridge [label="telescope_server.py"];
+        nexstar [label="NexStar Telescope Mount", shape=box, style=filled, color=black, fillcolor=grey];
+        tle_proc [label="satellites.py"];
+        files [label="TLE Files", shape=box, style=filled, color=black, fillcolor=yellow];
+        Airplanes [shape=box, style=filled, color=black, fillcolor=lightblue];
+        Satellites [shape=box, style=filled, color=black, fillcolor=lightblue];
+    }
+
+    subgraph cluster_legend {
+        label="Legend";
+        theirs -> yours -> Files -> Server -> Client [style=invis];
+        Client [style=filled, color=black, fillcolor=lightgreen];
+        theirs [label="Other people's stuff", shape=box, style=filled, color=black, fillcolor=lightblue];
+        yours [label="Hardware", shape=box, style=filled, color=black, fillcolor=grey];
+        Files [shape=box, style=filled, color=black, fillcolor=yellow];
+    }
+}

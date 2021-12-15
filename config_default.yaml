@@ -1,0 +1,40 @@
+# Add your own custom locations to config.yaml.
+locations:
+    mt_wilson:
+        lat_degrees: 34.222901
+        lon_degrees: -118.062696
+        alt_meters: 1742.0
+
+    griffith:
+        lat_degrees: 34.118874
+        lon_degrees: -118.300536
+        alt_meters: 346.0
+
+    hollywood_sign:
+        lat_degrees: 34.134046
+        lon_degrees: -118.321633
+        alt_meters: 481.0
+
+# Where are you observing from today? Override this in config.yaml.
+location: griffith
+
+landmark: null
+
+tle_files:
+    - tle/visual.txt
+    - tle/stations.txt
+
+sbs1_servers:
+    - localhost:30003  # dump1090
+    - localhost:40004  # satellites.py
+
+telescope_server: localhost:45345
+
+serial_port: auto
+
+hootl: False
+
+gains:
+    kp: 1.0
+    ki: 0.1
+    kd: 0.1
