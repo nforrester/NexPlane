@@ -16,6 +16,7 @@ NexPlane comes with **absolutely no warranty**, and use of NexPlane is entirely 
 # NexPlane
 
 NexPlane can help you drive a Celestron NexStar telescope mount to track airplanes and satellites.
+SynScan mounts will probably work too, but have not been tested.
 
 In order to track airplanes, you will need a source of live data about airplanes near you in
 SBS-1 (BaseStation) format. An easy way to generate such data is with an
