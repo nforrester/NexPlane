@@ -43,6 +43,11 @@ def parse_args_and_config():
     parser.set_defaults(run_hootl=config_data['hootl'])
 
     parser.add_argument(
+        '--bw', action='store_true',
+        help='Make the display black and white (this is useful for '
+             'increasing contrast when operating in direct sunlight).')
+
+    parser.add_argument(
         '--location', type=str, default=config_data['location'],
         help='Where are you? Pick a named location from your config file '
              '(default: ' + config_data['location'] + ')')
@@ -106,7 +111,7 @@ def main():
     kd = config_data['gains']['kd']
 
     # Run the GUI.
-    gui_iface = gui.Gui(kp, ki, kd)
+    gui_iface = gui.Gui(args.bw, kp, ki, kd)
 
     try:
         # Telescope control interface.

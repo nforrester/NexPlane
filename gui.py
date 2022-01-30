@@ -24,7 +24,9 @@ class Exit(Exception):
 
 class Gui(object):
     '''Runs the GUI and provides the interface between it and the main thread.'''
-    def __init__(self, kp, ki, kd):
+    def __init__(self, black_and_white, kp, ki, kd):
+        self.black_and_white = black_and_white
+
         # Interface variables, shared between main and gui thread.
         self.iface_scope_azm_alt = (0.0, 0.0)  # Where is the telescope pointing? (azimuth, elevation). radians.
         self.iface_sun_azm_alt = (0.0, 0.0)    # Where is the Sun?                (azimuth, elevation). radians.
@@ -149,15 +151,27 @@ class Gui(object):
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glLoadIdentity()
 
-        # Define some useful colors
-        yellow  = (1.0, 1.0, 0.0)
-        red     = (1.0, 0.0, 0.0)
-        blue    = (0.4, 0.4, 1.0)
-        blue2   = (0.6, 0.6, 1.0)
-        green   = (0.2, 0.6, 0.2)
-        orange  = (1.0, 0.4, 0.4)
-        orange2 = (1.0, 0.6, 0.6)
-        gray    = (0.8, 0.8, 0.8)
+        if self.black_and_white:
+            # Forget the colors and make them all white (the background is black).
+            # This is useful for raising contrast when operating in direct sunlight.
+            yellow  = (1.0, 1.0, 1.0)
+            red     = (1.0, 1.0, 1.0)
+            blue    = (1.0, 1.0, 1.0)
+            blue2   = (1.0, 1.0, 1.0)
+            green   = (1.0, 1.0, 1.0)
+            orange  = (1.0, 1.0, 1.0)
+            orange2 = (1.0, 1.0, 1.0)
+            gray    = (1.0, 1.0, 1.0)
+        else:
+            # Define some useful colors
+            yellow  = (1.0, 1.0, 0.0)
+            red     = (1.0, 0.0, 0.0)
+            blue    = (0.4, 0.4, 1.0)
+            blue2   = (0.6, 0.6, 1.0)
+            green   = (0.2, 0.6, 0.2)
+            orange  = (1.0, 0.4, 0.4)
+            orange2 = (1.0, 0.6, 0.6)
+            gray    = (0.8, 0.8, 0.8)
 
         # Draw the horizon and axis labels in green.
         self._draw_horizon(green)
