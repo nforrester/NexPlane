@@ -307,8 +307,9 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
 ### `nexplane.py`
 
     $ ./nexplane.py --help
-    usage: nexplane.py [-h] [--config CONFIG] [--hootl] [--no-hootl] [--location LOCATION]
-                       [--landmark LANDMARK] [--telescope TELESCOPE] [--sbs1 SBS1]
+    usage: nexplane.py [-h] [--config CONFIG] [--hootl] [--no-hootl] [--bw]
+                       [--location LOCATION] [--landmark LANDMARK]
+                       [--telescope TELESCOPE] [--sbs1 SBS1]
 
     Helps you track airplanes and satellites with a Celestron NexStar telescope mount.
 
@@ -325,6 +326,9 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
                             internal simulation of the telescope. This is useful for
                             testing.
       --no-hootl            Opposite of --hootl. This is the default
+      --bw                  Make the display black and white (this is useful for
+                            increasing contrast when operating in direct
+                            sunlight).
       --location LOCATION   Where are you? Pick a named location from your config file
                             (default: home)
       --landmark LANDMARK   If it is not possible to use the telescope's internal alignment
