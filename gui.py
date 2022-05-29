@@ -21,15 +21,22 @@ import OpenGL.GL as gl
 import OpenGL.GLU as glu
 import OpenGL.GLUT as glut
 
+import astropy.coordinates as coords
+
 import util
+from util import unwrap
+
+from sbs1 import Airplane
 
 class Exit(Exception):
     '''Thrown in the main thread when the GUI thread stops, probably because somebody closed the window.'''
     pass
 
-class Gui(object):
+Color = tuple[float, float, float]
+
+class Gui:
     '''Runs the GUI and provides the interface between it and the main thread.'''
-    def __init__(self, black_and_white, white_bg, kp, ki, kd, draw_eq_frame, observatory_location):
+    def __init__(self, black_and_white: bool, white_bg: bool, kp: float, ki: float, kd: float, draw_eq_frame: bool, observatory_location: coords.EarthLocation):
         self.black_and_white = black_and_white
         self.white_bg = white_bg
 
@@ -37,11 +44,12 @@ class Gui(object):
         self.observatory_location = observatory_location
 
         # Interface variables, shared between main and gui thread.
-        self.iface_scope_azm_alt = (0.0, 0.0)  # Where is the telescope pointing? (azimuth, elevation). radians.
-        self.iface_sun_azm_alt = (0.0, 0.0)    # Where is the Sun?                (azimuth, elevation). radians.
-        self.iface_moon_azm_alt = (0.0, 0.0)   # Where is the Moon?               (azimuth, elevation). radians.
-        self.iface_airplanes = dict()          # The airplanes to draw, as returned by sbs1_receiver.get_planes().
-        self.iface_tracked_plane = None        # Hex code of the airplane the user wants to track.
+        self.iface_scope_azm_alt = (0.0, 0.0)              # Where is the telescope pointing? (azimuth, elevation). radians.
+        self.iface_sun_azm_alt = (0.0, 0.0)                # Where is the Sun?                (azimuth, elevation). radians.
+        self.iface_moon_azm_alt = (0.0, 0.0)               # Where is the Moon?               (azimuth, elevation). radians.
+        self.iface_airplanes: dict[str, Airplane] = dict() # The airplanes to draw, as returned by sbs1_receiver.get_planes().
+        self.iface_tracked_plane: str | None = None        # Hex code of the airplane the user wants to track.
+        self.iface_warn_comm_failure = False               # If true, display a warning about a communication error.
 
         # Manually applied azimuth and elevation offsets.
         self.iface_azm_offset = 0.0
@@ -56,22 +64,30 @@ class Gui(object):
         self.iface_lock = threading.Lock()
 
         # Start the GUI thread.
-        def run_thread():
+        def run_thread() -> None:
             self._run_gui()
         self.stop_thread = False
         self.thread = threading.Thread(target=run_thread)
         self.thread.start()
 
-    def close(self):
+    def close(self) -> None:
         '''Call from the main thread to close the GUI and join the GUI thread.'''
         self.stop_thread = True
         self.thread.join()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
-    def provide_update(self, scope_azm_alt, sun_azm_alt, moon_azm_alt, airplanes):
-        '''Call from the main thread to feed new data to the GUI so it can be displayed. See comments in __init__() for parameter definitions.'''
+    def provide_update(
+        self,
+        scope_azm_alt: tuple[float, float],
+        sun_azm_alt: tuple[float, float],
+        moon_azm_alt: tuple[float, float],
+        airplanes: dict[str, Airplane]) -> None:
+        '''
+        Call from the main thread to feed new data to the GUI so it can be displayed.
+        See comments in __init__() for parameter definitions.
+        '''
         if not self.thread.is_alive():
             raise Exit
         copied_airplanes = copy.deepcopy(airplanes)
@@ -81,19 +97,36 @@ class Gui(object):
             self.iface_moon_azm_alt = moon_azm_alt
             self.iface_airplanes = copied_airplanes
 
-    def get_inputs(self):
+    def update_comm_failure(self, warn_comm_failure: bool) -> None:
+        '''
+        Call from the main thread to feed new data to the GUI so it can be displayed.
+        See comments in __init__() for parameter definitions.
+        '''
+        if not self.thread.is_alive():
+            raise Exit
+        with self.iface_lock:
+            self.iface_warn_comm_failure = warn_comm_failure
+
+    def get_inputs(self) -> tuple[str | None, float, float, float, float, float, int]:
         '''Call from the main thread to get the user's latest desires. See comments in __init__() for return value definitions.'''
         with self.iface_lock:
-            return self.iface_tracked_plane, self.iface_azm_offset, self.iface_alt_offset, self.iface_kp, self.iface_ki, self.iface_kd, self.iface_gain_changes
+            return (
+                self.iface_tracked_plane,
+                self.iface_azm_offset,
+                self.iface_alt_offset,
+                self.iface_kp,
+                self.iface_ki,
+                self.iface_kd,
+                self.iface_gain_changes)
 
-    def stop_tracking(self):
+    def stop_tracking(self) -> None:
         '''Call from the main thread to stop tracking the currently selected airplane.'''
         with self.iface_lock:
             self.iface_tracked_plane = None
             self.iface_azm_offset = 0.0
             self.iface_alt_offset = 0.0
 
-    def _run_gui(self):
+    def _run_gui(self) -> None:
         '''The GUI thread.'''
         # These variables track the current window size. Here are some reasonable defaults.
         self.width = 1200
@@ -137,11 +170,11 @@ class Gui(object):
             glut.glutMainLoopEvent()
             time.sleep(0.1)
 
-    def _handle_close_window(self):
+    def _handle_close_window(self) -> None:
         '''Callback for the window being closed. Signals the GUI loop, and therefore the GUI thread, to exit.'''
         self.stop_thread = True
 
-    def _azm_alt_to_x_y(self, azm, alt):
+    def _azm_alt_to_x_y(self, azm: float, alt: float) -> tuple[float, float]:
         '''Compute window coordinates corresponding to a particular azimuth and elevation.'''
         min_alt = -5 / 180 * math.pi
         max_alt = math.pi / 2
@@ -150,7 +183,7 @@ class Gui(object):
         y = int(((alt-min_alt)/(max_alt-min_alt)) * self.height)
         return x, y
 
-    def _draw(self):
+    def _draw(self) -> None:
         '''Callback for drawing the window contents.'''
         # Get new data from the main thread.
         with self.iface_lock:
@@ -158,6 +191,7 @@ class Gui(object):
             sun_azm, sun_alt = self.iface_sun_azm_alt
             moon_azm, moon_alt = self.iface_moon_azm_alt
             airplanes = copy.deepcopy(self.iface_airplanes)
+            warn_comm_failure = self.iface_warn_comm_failure
 
         # Clear the window and prepare for drawing.
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
@@ -178,9 +212,11 @@ class Gui(object):
                 untracked_space_projected_color  = all_black
                 horizon_color                    = all_black
                 eq_frame_color                   = all_black
+                eq_frame_second_color            = (0.7, 0.7, 0.7)
                 tracked_last_known_color         = all_black
                 tracked_projected_color          = all_black
                 moon_color                       = all_black
+                warn_color                       = all_black
             else:
                 all_white = (1.0, 1.0, 1.0)
 
@@ -192,9 +228,11 @@ class Gui(object):
                 untracked_space_projected_color  = all_white
                 horizon_color                    = all_white
                 eq_frame_color                   = all_white
+                eq_frame_second_color            = (0.2, 0.2, 0.2)
                 tracked_last_known_color         = all_white
                 tracked_projected_color          = all_white
                 moon_color                       = all_white
+                warn_color                       = all_white
         else:
             # Define some useful colors
             if self.white_bg:
@@ -204,6 +242,9 @@ class Gui(object):
                 untracked_space_last_known_color = (0.0, 0.0, 0.0) # Black
                 untracked_space_projected_color  = (0.3, 0.3, 0.3) # Dark gray
 
+                eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
+                eq_frame_second_color            = (1.0, 0.8, 1.0) # Pink
+
             else:
                 sun_color  = (1.0, 1.0, 0.0) # Bright yellow
                 moon_color = (0.8, 0.8, 0.8) # Gray
@@ -211,19 +252,22 @@ class Gui(object):
                 untracked_space_last_known_color = (0.8, 0.8, 0.8) # Gray
                 untracked_space_projected_color  = (1.0, 1.0, 1.0) # White
 
+                eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
+                eq_frame_second_color            = (0.2, 0.1, 0.2) # Dark Purple
+
             telescope_color                  = (1.0, 0.0, 0.0) # Red
             untracked_atmos_last_known_color = (0.4, 0.4, 1.0) # Dark blue
             untracked_atmos_projected_color  = (0.6, 0.6, 1.0) # Light blue
             horizon_color                    = (0.2, 0.6, 0.2) # Green
-            eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
             tracked_last_known_color         = (1.0, 0.4, 0.4) # Dark orange
             tracked_projected_color          = (1.0, 0.6, 0.6) # Light orange
+            warn_color                       = (1.0, 0.0, 0.0) # Red
 
         # Draw the horizon and axis labels.
         self._draw_horizon(horizon_color)
 
         if self.draw_eq_frame:
-            self._draw_eq_frame(eq_frame_color)
+            self._draw_eq_frame(eq_frame_color, eq_frame_second_color)
 
         # Radius of the telescope field of view, in radians.
         # The present value is a bit high for my scope,
@@ -233,6 +277,15 @@ class Gui(object):
         # Draw a cross and circle where the telescope is pointing.
         self._draw_marker(telescope_color, view_radius, scope_azm, scope_alt)
         self._draw_sky_circle(telescope_color, 1/180*math.pi, scope_azm, scope_alt)
+
+        # Label the back of the telescope if NexPlane thinks its pointing at the ground,
+        # because the user may be confused.
+        if util.wrap_rad(scope_alt, -math.pi) < 0:
+            back_azm = util.wrap_rad(scope_azm + math.pi, 0)
+            back_alt = util.wrap_rad(-scope_alt, -math.pi)
+            self._draw_marker(telescope_color, view_radius, back_azm, back_alt)
+            x, y = self._azm_alt_to_x_y(back_azm, back_alt)
+            self._draw_text(x+5, y+5, 'Back of telescope.')
 
         # Draw the Moon.
         sun_moon_angular_radius = 0.26/180*math.pi
@@ -264,24 +317,32 @@ class Gui(object):
                     projected_color  = untracked_atmos_projected_color
 
             # Draw a marker for this airplane.
-            self._draw_marker(last_known_color, view_radius, airplane.az.value, airplane.el.value, airplane.callsign.value)
+            self._draw_marker(last_known_color, view_radius, unwrap(airplane.az.value), unwrap(airplane.el.value), unwrap(airplane.callsign.value))
 
             # If this is the tracked airplane, extrapolate its current location based on the
             # last update and put a secondary marker there. Ideally we would do this for every airplane,
             # but the extrapolation is expensive and my laptop is only so fast. Maybe yours is faster.
             if self.iface_tracked_plane == airplane.hex.value:
                 extrapolated = airplane.extrapolate(time.monotonic_ns())
-                self._draw_marker(projected_color, view_radius, extrapolated.az.value, extrapolated.el.value)
+                self._draw_marker(projected_color, view_radius, unwrap(extrapolated.az.value), unwrap(extrapolated.el.value))
+
+        # Warn of a communication failure, if any.
+        if warn_comm_failure:
+            gl.glColor3f(*warn_color)
+            x, y = self._azm_alt_to_x_y(math.pi, 45/180*math.pi)
+            warn_font = glut.GLUT_BITMAP_TIMES_ROMAN_24
+            self._draw_text(x-220, y+15, 'TELESCOPE COMMUNICATION FAILURE!', font=warn_font)
+            self._draw_text(x-140, y-15, 'PREVENT COLLISION!!!!', font=warn_font)
 
         # Update the screen.
         glut.glutSwapBuffers()
 
-    def _draw_text(self, x, y, text):
+    def _draw_text(self, x: float, y: float, text: str, font: int = glut.GLUT_BITMAP_9_BY_15) -> None:
         '''Draw some text at the given location on screen.'''
         gl.glRasterPos2f(x, y)
-        glut.glutBitmapString(glut.GLUT_BITMAP_9_BY_15, text.encode())
+        glut.glutBitmapString(font, text.encode())
 
-    def _draw_horizon(self, color):
+    def _draw_horizon(self, color: Color) -> None:
         '''Draw the horizon and axis labels.'''
         x1, y1 = self._azm_alt_to_x_y(0, 0)
         x2, y2 = self._azm_alt_to_x_y(1.999*math.pi, 0)
@@ -303,7 +364,7 @@ class Gui(object):
             x, y = self._azm_alt_to_x_y(math.pi, alt/180*math.pi)
             self._draw_text(x - 5, y - font_offset, str(alt))
 
-    def _draw_eq_frame(self, color):
+    def _draw_eq_frame(self, color: Color, secondary_color: Color) -> None:
         '''Draw the equatorial frame.'''
         current_time = util.get_current_time()
 
@@ -322,7 +383,6 @@ class Gui(object):
         self._draw_sky_circle(color, math.pi/2, north_pole_azm, north_pole_alt)
 
         # Draw some dec lines
-        secondary_color = [x*0.2 for x in color]
         for normal_ra in [0, math.pi/4, math.pi/2, -math.pi/4]:
             dec_line_normal_alt, dec_line_normal_azm = util.radec_to_altaz(normal_ra, 0, self.observatory_location, current_time)
             self._draw_sky_circle(secondary_color, math.pi/2, dec_line_normal_azm, dec_line_normal_alt)
@@ -331,7 +391,7 @@ class Gui(object):
         for dec_radius in [math.pi/8, math.pi/4, 3*math.pi/8, 5*math.pi/8, 3*math.pi/4, 7*math.pi/8]:
             self._draw_sky_circle(secondary_color, dec_radius, north_pole_azm, north_pole_alt)
 
-    def _draw_marker(self, color, radius, azm, alt, label=''):
+    def _draw_marker(self, color: Color, radius: float, azm: float, alt: float, label: str = '') -> None:
         '''Draw a marker on the screen.
 
         color    The color of the marker.
@@ -355,7 +415,7 @@ class Gui(object):
         if label != '':
             self._draw_text(x+4, y-4, label)
 
-    def _draw_sky_circle(self, color, angular_radius, center_azm, center_alt):
+    def _draw_sky_circle(self, color: Color, angular_radius: float, center_azm: float, center_alt: float) -> None:
         '''Draw a circle on the sky, and project it onto the screen using the equiangular projection.
 
         color           The color of the circle
@@ -411,7 +471,7 @@ class Gui(object):
 
         gl.glEnd()
 
-    def _handle_resize(self, width, height):
+    def _handle_resize(self, width: int, height: int) -> None:
         '''Callback to handle a resize of the window.'''
         self.width = max(640, width)
         self.height = max(480, height)
@@ -422,7 +482,7 @@ class Gui(object):
         gl.glOrtho(0, self.width, 0, self.height, 0.0, 1.0)
         gl.glMatrixMode(gl.GL_MODELVIEW)
 
-    def _handle_key(self, key, x, y):
+    def _handle_key(self, key: bytes, x: int, y: int) -> None:
         '''Callback to handle a keypress.'''
         small_motion = 0.1 / 180 * math.pi
         big_motion = 5 * small_motion
@@ -473,7 +533,7 @@ class Gui(object):
                 self.iface_kd -= 0.01
                 self.iface_gain_changes += 1
 
-    def _handle_mouse(self, button, state, x, y):
+    def _handle_mouse(self, button: int, state: int, x: int, y: int) -> None:
         '''Callback to handle a mouse event. Clicking on an airplane will start tracking it.'''
         # Ignore anything but a left mouse button down event.
         if button != 0 or state != 1:
@@ -489,9 +549,9 @@ class Gui(object):
         min_dist = None
         closest = None
         for airplane in airplanes.values():
-            ax, ay = self._azm_alt_to_x_y(airplane.az.value, airplane.el.value)
+            ax, ay = self._azm_alt_to_x_y(unwrap(airplane.az.value), unwrap(airplane.el.value))
             dist = math.sqrt((x-ax)**2 + (y-ay)**2)
-            if (closest is None or dist < min_dist) and (dist < 50):
+            if (min_dist is None or dist < min_dist) and (dist < 50):
                 min_dist = dist
                 closest = airplane.hex.value
 

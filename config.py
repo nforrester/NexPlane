@@ -5,14 +5,16 @@ import copy
 import os
 import yaml
 
-def main_config_dir():
+from typing import Any
+
+def main_config_dir() -> str:
     '''
     Return the directory containing this file, which is where the config_default.yaml and
     config.yaml should be.
     '''
     return os.path.dirname(os.path.abspath(__file__))
 
-def merge_config(under, over):
+def merge_config(under: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
     '''Merge two nested dictionaries, picking the value from the second whenever they conflict.'''
     output = copy.deepcopy(under)
     for key, value in over.items():
@@ -22,7 +24,7 @@ def merge_config(under, over):
             output[key] = copy.deepcopy(value)
     return output
 
-def read_config(extra_configs):
+def read_config(extra_configs: list[str]) -> dict[str, Any]:
     '''
     Read config_default.yaml and config.yaml, with the second taking priority in case of conflict.
     Then read additional config files specified in extra_configs, with each taking priority over
@@ -41,9 +43,10 @@ def read_config(extra_configs):
         with open(filename) as f:
             data = merge_config(data, yaml.load(f.read(), yaml.Loader))
 
+    assert isinstance(data, dict)
     return data
 
-def get_arg_parser_and_config_data(*args, **kwargs):
+def get_arg_parser_and_config_data(*args: Any, **kwargs: Any) -> tuple[argparse.ArgumentParser, dict[str, Any]]:
     '''
     Parse the --config options from the command line, read the config files,
     then return an ArgumentParser constructed with the supplied args and kwargs
@@ -51,7 +54,7 @@ def get_arg_parser_and_config_data(*args, **kwargs):
     This allows you to alter the defaults for other command line options
     depending on the contents of the files specified by the --config options.
     '''
-    def add_config_arg(parser):
+    def add_config_arg(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             '--config', action='append', type=str, default=[],
             help='Specify an additional config file to be read that takes priority over '

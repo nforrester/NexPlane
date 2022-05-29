@@ -17,7 +17,9 @@ import select
 import time
 import traceback
 
-class DupDetector(object):
+from typing import Any, Callable
+
+class DupDetector:
     '''
     We need to detect duplicate messages so we can ignore them. Message IDs come
     mostly sequentially, but can arrive slightly out of order. We can't just
@@ -32,11 +34,11 @@ class DupDetector(object):
     the set. When the lowest and second lowest IDs currently stored are adjacent
     we can then remove the lowest to keep memory usage from growing.
     '''
-    def __init__(self):
+    def __init__(self) -> None:
         self.heap = [-1]            # Keep track of the maximum ID for which we know all lower IDs have been observed.
         self.set = set(self.heap)   # Keep track of IDs in the sparse region.
 
-    def is_new(self, num):
+    def is_new(self, num: int) -> bool:
         '''Return True if this is the first call to is_new() with this value as an argument.'''
         # If this ID is less than the minimum ID we're currently tracking, we've seen it.
         if num <= self.heap[0]:
@@ -58,7 +60,7 @@ class DupDetector(object):
 
         return True
 
-    def lowest_still_tracked(self):
+    def lowest_still_tracked(self) -> int:
         '''Return the maximum ID such that all lower IDs have been seen.'''
         return self.heap[0]
 
@@ -70,9 +72,9 @@ class RpcRemoteException(Exception):
     '''Raised on the client if the command on the server raises an exception.'''
     pass
 
-class RpcClient(object):
+class RpcClient:
     '''Make Remote Procedure Calls to a server which executes them.'''
-    def __init__(self, host_port):
+    def __init__(self, host_port: str):
         '''
         The argument is a string with the hostname or IP address of the RPC server,
         and the port number to connect to, separated by a colon. For example, '192.168.0.2:45345'.
@@ -82,8 +84,16 @@ class RpcClient(object):
 
         # Listen for replies on port+1.
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
         self.sock.bind(('0.0.0.0', int(port)+1))
 
+        self.reset_connection()
+
+    def reset_connection(self) -> None:
+        '''
+        Reset the connection to the server, because more packets
+        have been dropped than can be compensated for.
+        '''
         # ID of the next command.
         self.counter = 0
 
@@ -93,16 +103,25 @@ class RpcClient(object):
         # ID of this client. The probability of two clients picking the same ID is low.
         self.client_id = random.randint(0, 100000000000000)
 
-    def call(self, fun, *args, **kwargs):
-        '''Call a function on the server. If it returns a value, return it. If it raises an exception, raise an RpcRemoteException.'''
+    def call(self, fun: str, *args: Any, **kwargs: Any) -> Any:
+        '''
+        Call a function on the server. If it returns a value, return it.
+        If it raises an exception, raise an RpcRemoteException.
+        '''
         # Encode the message to the server.
-        message = repr((self.client_id, self.counter, self.response_tracker.lowest_still_tracked(), fun, args, kwargs)).encode()
+        message = repr((
+            self.client_id,
+            self.counter,
+            self.response_tracker.lowest_still_tracked(),
+            fun,
+            args,
+            kwargs)).encode()
 
-        overall_timeout = 5.0 # How long to wait before giving up.
+        overall_timeout = 1.0 # How long to wait before giving up.
         salvo_timeout = 0.1   # How long to wait before retransmitting.
         salvo_size = 3        # How many duplicate packets to send in each salvo.
         try:
-            give_up_time = time.monotonic() + 5.0
+            give_up_time = time.monotonic() + overall_timeout
             while time.monotonic() < give_up_time:
                 # Send a salvo of packets.
                 for _ in range(salvo_size):
@@ -129,37 +148,39 @@ class RpcClient(object):
             # Increment the message ID.
             self.counter += 1
 
+        self.reset_connection()
         raise RpcConnectionFailure('Connection failure.')
 
-class RpcServer(object):
+class RpcServer:
     '''Service Remote Procedure Calls and report the results back to the clients.'''
-    def __init__(self, port):
+    def __init__(self, port: int):
         host_port = ('0.0.0.0', port)
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
         self.sock.bind(host_port)
 
-        self.dups = dict()                  # For each client ID, stores a DupDetector.
-        self.dup_responses = dict()         # For each client ID, stores a dictionary that remembers the response for each command
-        self.dup_responses_horizon = dict() # The minimum key remaining in each element of dup_responses.
-        self.funs = dict()                  # What functions do we implement?
+        self.dups: dict[int, DupDetector] = dict()             # For each client ID, stores a DupDetector.
+        self.dup_responses: dict[int, dict[int, Any]] = dict() # For each client ID, stores a dictionary that remembers the response for each command
+        self.dup_responses_horizon: dict[int, int] = dict()    # The minimum key remaining in each element of dup_responses.
+        self.funs: dict[str, Callable] = dict()                # What functions do we implement?
 
         # This server should provide the get_funs function so clients can understand their options.
         self.add_fun_named('get_funs', self.get_funs)
 
-    def add_fun_named(self, name, fun):
+    def add_fun_named(self, name: str, fun: Callable) -> None:
         '''Register a function that can be called by the clients, specifying the name of the function as an argument.'''
         self.funs[name] = fun
 
-    def add_fun(self, fun):
+    def add_fun(self, fun: Callable) -> None:
         '''Register a function that can be called by the clients, picking the name of the function from its __name__ attribute.'''
         self.funs[fun.__name__] = fun
 
-    def get_funs(self):
+    def get_funs(self) -> list[str]:
         '''Return the list of functions this server provides.'''
         return list(self.funs.keys())
 
-    def run(self):
+    def run(self) -> None:
         '''Run the server.'''
         while True:
             # Wait for, receive, and parse a request.
@@ -182,6 +203,8 @@ class RpcServer(object):
                 try:
                     value = self.funs[fun](*args, **kwargs)
                     exception = None
+                except KeyboardInterrupt:
+                    raise
                 except:
                     value = None
                     exception = traceback.format_exc()

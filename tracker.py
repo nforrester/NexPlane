@@ -10,13 +10,15 @@ import time
 import nexstar
 import util
 
-class PidController(object):
+from mount_base import Mount
+
+class PidController:
     '''Does exactly what it says on the tin.'''
-    def __init__(self, kp, ki, kd):
+    def __init__(self, kp: float, ki: float, kd: float):
         '''Create a new PidController with the specified gains.'''
         self.set_gains(kp, ki, kd)
 
-    def set_gains(self, kp, ki, kd):
+    def set_gains(self, kp: float, ki: float, kd: float) -> None:
         '''Set the gains and reset the controller.'''
         self.kp = kp
         self.ki = ki
@@ -24,13 +26,13 @@ class PidController(object):
 
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         '''Reset the controller.'''
         self.i_error = 0.0
-        self.last_error = None
-        self.last_time = None
+        self.last_error: float | None = None
+        self.last_time: float | None = None
 
-    def control(self, desired, actual):
+    def control(self, desired: float, actual: float) -> float:
         '''
         Given a desired position and an actual position for the current
         control step, return a command output that drives the actual
@@ -42,6 +44,8 @@ class PidController(object):
         output = self.kp * error
 
         if self.last_time is not None:
+            assert self.last_error is not None
+
             dt = now - self.last_time
             self.i_error += error * dt
             d_error = (error - self.last_error) / dt
@@ -54,9 +58,9 @@ class PidController(object):
 
         return output
 
-class Tracker(object):
+class Tracker:
     '''Run a PidController for each axis, and drive the telescope to point at targets.'''
-    def __init__(self, telescope, kp, ki, kd, altaz_mode):
+    def __init__(self, telescope: Mount, kp: float, ki: float, kd: float, altaz_mode: bool):
         '''
         If altaz_mode = True, we'll track in alt/az coordinates.
         If altaz_mode = False, we'll track in ra/dec coordinates.
@@ -67,12 +71,12 @@ class Tracker(object):
         self.stopped=False
         self.altaz_mode = altaz_mode
 
-    def set_gains(self, kp, ki, kd):
+    def set_gains(self, kp: float, ki: float, kd: float) -> None:
         '''Set controller gains.'''
         self.azm_or_ra_controller.set_gains(kp, ki, kd)
         self.alt_or_dec_controller.set_gains(kp, ki, kd)
 
-    def stop(self):
+    def stop(self) -> None:
         '''Stop the telescope.'''
         if not self.stopped:
             self.telescope.slew_azmalt(0, 0)
@@ -81,16 +85,16 @@ class Tracker(object):
         self.azm_or_ra_controller.reset()
         self.alt_or_dec_controller.reset()
 
-    def go(self, target_azm_or_ra, target_alt_or_dec):
+    def go(self, target_azm_or_ra: float, target_alt_or_dec: float) -> None:
         '''
         Set the telescope slew rate to move towards the given position.
         This should be called on every control cycle (unless the tracker is stopped).
         '''
         self.stopped = False
         if self.altaz_mode:
-            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_azm_alt()
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_azm_alt()
         else:
-            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_ra_dec()
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_ra_dec()
         actual_azm_or_ra = util.wrap_rad(actual_azm_or_ra, target_azm_or_ra-math.pi)
         actual_alt_or_dec = util.wrap_rad(actual_alt_or_dec, target_alt_or_dec-math.pi)
         slew_rate_azm_or_ra = self.azm_or_ra_controller.control(target_azm_or_ra, actual_azm_or_ra)

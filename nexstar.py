@@ -6,15 +6,11 @@ The main class here is NexStar, which contains all the business logic for encodi
 requests to the telescope and decoding responses, and presents a nice interface to
 the rest of the program. When you construct a NexStar object you must pass an
 object that can take those commands and actually talk to the telescope. This is
-useful because there are a few different useful ways you might talk to the
+useful because there are two different useful ways you might talk to the
 telescope:
 
-    NexStarSerial
-        The telescope is directly connected to this computer.
-        Just open the serial port and talk to it.
-
-    NexStarSerialNetClient
-        The telescope is connected to a different computer.
+    SerialNetClient
+        The telescope is connected to a computer (possibly a different one).
         Talk to it via an RPC server running on that computer.
         See telescope_server.py.
 
@@ -25,7 +21,6 @@ telescope:
 '''
 
 import ast
-import enum
 import math
 import serial
 import socket
@@ -37,10 +32,12 @@ import astropy.time
 import astropy.coordinates as coords
 import astropy.units as units
 
-import rpc
 import util
+from util import unwrap
 
-def wrap_b24(theta, minimum):
+from mount_base import Client, Mount, CommError, speak_delay, TrackingMode
+
+def wrap_b24(theta: int, minimum: int) -> int:
     '''Wrap an angle expressed in units of 1/(2**24) turns into the range minimum to (minimum + 2**24).'''
     while theta >= minimum + 2**24:
         theta -= 2**24
@@ -48,52 +45,44 @@ def wrap_b24(theta, minimum):
         theta += 2**24
     return theta
 
-def rad_to_b24(radians):
+def rad_to_b24(radians: float) -> int:
     '''Convert an angle in radians to the 24 bit representation the NexStar serial protocol likes.'''
     return util.clamp(int(util.wrap_rad(radians, 0) / (2*math.pi) * (2**24)), 0, 0xffffff)
 
-def b24_to_rad(b24):
+def b24_to_rad(b24: int) -> float:
     '''Convert an angle in the 24 bit representation the NexStar serial protocol likes to radians.'''
     return b24/(2**24)*2*math.pi
 
-def quarterarcseconds_to_rad(quarterarcseconds):
+def quarterarcseconds_to_rad(quarterarcseconds: int | float) -> float:
     '''Convert an angle in quarter arcseconds to radians.'''
     quarterarcseconds_per_turn = 360 * 60 * 60 * 4
     return quarterarcseconds / quarterarcseconds_per_turn * 2 * math.pi
 
-def rad_to_quarterarcseconds(rad):
+def rad_to_quarterarcseconds(rad: float) -> int:
     '''Convert an angle in radians to quarter arcseconds.'''
     quarterarcseconds_per_turn = 360 * 60 * 60 * 4
     return int(rad / (2 * math.pi) * quarterarcseconds_per_turn)
 
-class TrackingMode(enum.Enum):
-    '''Tracking modes the telescope can use.'''
-    OFF      = 0
-    ALT_AZ   = 1
-    # Do not use equatorial tracking modes
-    #EQ_NORTH = 2
-    #EQ_SOUTH = 3
-
-def to_hex(num_digits, value):
+def to_hex(num_digits: int, value: int) -> str:
     '''Convert an int to a hexadecimal string, with enough leading zeros so that it has exactly the specified number of digits.'''
     assert value < 16**num_digits
     return '%0*X' % (num_digits, value)
 
-def from_hex(hex_text):
+def from_hex(hex_text: str) -> int:
     '''Convert a hexadecimal string to an integer.'''
     return int(hex_text, 16)
 
-def b24_to_hex4(b24):
+def b24_to_hex4(b24: int) -> str:
     '''Convert a 24 bit angle to a 4 digit hex string (this involves a loss in precision).'''
     return to_hex(4, wrap_b24(b24, 0) >> 8)
 
-def b24_to_hex8(b24):
+def b24_to_hex8(b24: int) -> str:
     '''Convert a 24 bit angle to an 8 digit hex string (the two least significant digits get set to zero).'''
     return to_hex(8, wrap_b24(b24, 0) << 8)
 
 SIDERIAL_RATE_RADIANS_PER_SECOND = 7.2921150e-5
 
-def fixed_rate_map(fixed_rate):
+def fixed_rate_map(fixed_rate: int) -> int:
     '''The telescope has several fixed slew rates you can invoke.
     Given a fixed rate index, return the corresponding rate in quarter arcseconds per second.'''
     siderial_rate = int(SIDERIAL_RATE_RADIANS_PER_SECOND / math.pi * 180 * 60 * 60 * 4)
@@ -120,81 +109,7 @@ def fixed_rate_map(fixed_rate):
         return 5 * degree_per_second
     raise Exception(f'Bad fixed rate: {fixed_rate}')
 
-class NexStarError(Exception):
-    '''Raised when the telescope does not respond, or gives an unexpected response.'''
-    pass
-
-BAUD_RATE = 9600
-
-def speak_delay(speak_fun):
-    '''Decorator used by NexStarSerialHootl to simulate communication delays with the telescope.'''
-    def delayed_speak(self, command):
-        time.sleep(0.04)
-        response = speak_fun(self, command)
-        time.sleep(0.05)
-        return response
-    return delayed_speak
-
-class NexStarSerial(object):
-    '''
-    The telescope is directly connected to this computer.
-    Just open the serial port and talk to it.
-
-    Assumes that the telescope is connected to /dev/ttyUSB0.
-    '''
-    def __init__(self):
-        self.serial_port = serial.Serial(port='/dev/ttyUSB0', baudrate=BAUD_RATE, timeout=3.5)
-        self.closed = False
-
-    def speak(self, command):
-        '''Send the telescope a command, and return its response (without the trailing '#').'''
-        assert not self.closed
-
-        self.serial_port.write(command.encode(encoding='ISO-8859-1'))
-
-        response = self.serial_port.read_until('#').decode(encoding='ISO-8859-1')
-        if len(response) == 0 or response[-1] != '#':
-            raise NexStarError(repr(response))
-        response = response[:-1]
-
-        return response
-
-    def close(self):
-        '''Close the serial port.'''
-        if not self.closed:
-            self.serial_port.close()
-            self.closed = True
-
-    def __del__(self):
-        self.close()
-
-class NexStarSerialNetClient(object):
-    '''
-    The telescope is connected to a different computer.
-    Talk to it via an RPC server running on that computer.
-    See telescope_server.py.
-    '''
-    def __init__(self, host_port):
-        '''
-        The argument is a string with the hostname or IP address of the RPC server,
-        and the port number to connect to, separated by a colon. For example, '192.168.0.2:45345'.
-        '''
-        socket.setdefaulttimeout(5.0)
-        self.client = rpc.RpcClient(host_port)
-        assert self.client.call('hello') == 'hello'
-
-    def speak(self, command):
-        '''Send the telescope a command, and return its response (without the trailing '#').'''
-        success, value = self.client.call('speak', command)
-
-        if not success:
-            raise NexStarError(repr(value))
-        return value
-
-    def close(self):
-        pass
-
-class NexStarSerialHootl(object):
+class NexStarSerialHootl(Client):
     '''
     A telescope simulator used for Hardware Out Of The Loop (HOOTL) testing.
     This lets you test the software without the risk of damaging your telescope,
@@ -202,7 +117,7 @@ class NexStarSerialHootl(object):
 
     The simulator runs in a separate thread.
     '''
-    def __init__(self, current_time, observatory_location, altaz_mode):
+    def __init__(self, current_time: astropy.time.Time, observatory_location: coords.EarthLocation, altaz_mode: bool):
         '''
         current_time should be an astropy.time.Time.
 
@@ -222,7 +137,7 @@ class NexStarSerialHootl(object):
         self.state_time = int(current_time.to_value('gps') * 1e9) # Integer nanoseconds since gps epoch.
         self.state_timestep = int(0.10 * 1e9) # Integer nanoseconds to advance per simulation step.
 
-        self.tracked_sky_coord = None
+        self.tracked_sky_coord: coords.SkyCoord | None = None
 
         # Interface variables, shared between main and simulator thread.
         self.iface_meas_azm = 0 # 24 bit integer
@@ -249,21 +164,21 @@ class NexStarSerialHootl(object):
         self.iface_lock = threading.Lock()
 
         # Start the simulator thread.
-        def run_thread():
+        def run_thread() -> None:
             self._run_simulator()
         self.stop_thread = False
         self.thread = threading.Thread(target=run_thread)
         self.thread.start()
 
-    def close(self):
+    def close(self) -> None:
         '''Stop the simulator and join the simulator thread.'''
         self.stop_thread = True
         self.thread.join()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
-    def _run_simulator(self):
+    def _run_simulator(self) -> None:
         '''Simulator thread.'''
         wall_time = int(time.time()*1e9)
         while not self.stop_thread:
@@ -394,7 +309,7 @@ class NexStarSerialHootl(object):
                     self.iface_meas_dec = self.state_alt_or_dec 
 
     @speak_delay
-    def speak(self, command):
+    def speak(self, command: str) -> str:
         '''Decode and execute a command, then encode and return a response.'''
         # If the simulator thread died, just give up.
         if not self.thread.is_alive():
@@ -403,7 +318,7 @@ class NexStarSerialHootl(object):
         with self.iface_lock:
             assert len(command) > 0
 
-            def match_passthrough(p1, p2, p3, nargs):
+            def match_passthrough(p1: int, p2: int, p3: int, nargs: int) -> bool:
                 '''
                 Return True if this command is a passthrough command with the
                 given prefix ID numbers and number of arguments.
@@ -563,35 +478,27 @@ class NexStarSerialHootl(object):
 
             raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
-class NexStar(object):
-    '''The main interface for speaking to the telescope.
+class NexStar(Mount):
+    '''The main interface for speaking to a NexStar telescope mount.
 
     Call member functions to send commands with arguments in sensible units,
     and they will return replies in sensible units.'''
-    def __init__(self, serial_port):
+    def __init__(self, serial_port: Client):
         '''
         The argument is an object that provides a speak() function for talking to the
-        telescope in the NexStar serial communication protocol. Can be any of
-        NexStarSerial, NexStarSerialNetClient, or NexStarSerialHootl.
+        telescope in the NexStar serial communication protocol. Can be either of
+        SerialNetClient or NexStarSerialHootl.
         '''
         self.serial_port = serial_port
 
-    def _speak(self, command, response_len):
+    def _speak(self, command: str, response_len: int) -> str:
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
         response = self.serial_port.speak(command)
         if len(response) != response_len:
-            raise NexStarError(repr(response))
+            raise CommError(repr(response))
         return response
 
-    def get_ra_dec(self):
-        '''Return current Right Ascension and Declination of telescope in radians, with low precision.'''
-        r = self._speak('E', 9)
-        assert r[4] == ','
-        ra = b24_to_rad(from_hex(r[0:4]) << 8)
-        dec = b24_to_rad(from_hex(r[5:9]) << 8)
-        return ra, dec
-
-    def get_precise_ra_dec(self):
+    def get_ra_dec(self) -> tuple[float, float]:
         '''Return current Right Ascension and Declination of telescope in radians, with high precision.'''
         r = self._speak('e', 17)
         assert r[8] == ','
@@ -599,15 +506,7 @@ class NexStar(object):
         dec = b24_to_rad(from_hex(r[9:17]) >> 8)
         return ra, dec
 
-    def get_azm_alt(self):
-        '''Return current azimuth and elevation of telescope in radians, with low precision.'''
-        r = self._speak('Z', 9)
-        assert r[4] == ','
-        azm = b24_to_rad(from_hex(r[0:4]) << 8)
-        alt = b24_to_rad(from_hex(r[5:9]) << 8)
-        return azm, alt
-
-    def get_precise_azm_alt(self):
+    def get_azm_alt(self) -> tuple[float, float]:
         '''Return current azimuth and elevation of telescope in radians, with high precision.'''
         r = self._speak('z', 17)
         assert r[8] == ','
@@ -615,35 +514,35 @@ class NexStar(object):
         alt = b24_to_rad(from_hex(r[9:17]) >> 8)
         return azm, alt
 
-    def goto_ra_dec(self, ra, dec):
+    def goto_ra_dec(self, ra: float, dec: float) -> None:
         '''GOTO the specified Right Ascension and Declination, with low precision.'''
         command = 'R{},{}'.format(b24_to_hex4(rad_to_b24(ra)), b24_to_hex4(rad_to_b24(dec)))
         self._speak(command, 0)
 
-    def goto_precise_ra_dec(self, ra, dec):
+    def goto_precise_ra_dec(self, ra: float, dec: float) -> None:
         '''GOTO the specified Right Ascension and Declination, with high precision.'''
         command = 'r{},{}'.format(b24_to_hex8(rad_to_b24(ra)), b24_to_hex8(rad_to_b24(dec)))
         self._speak(command, 0)
 
-    def goto_azm_alt(self, azm, alt):
+    def goto_azm_alt(self, azm: float, alt: float) -> None:
         '''GOTO the specified azimuth and elevation, with low precision.'''
         command = 'B{},{}'.format(b24_to_hex4(rad_to_b24(azm)), b24_to_hex4(rad_to_b24(alt)))
         self._speak(command, 0)
 
-    def goto_precise_azm_alt(self, azm, alt):
+    def goto_precise_azm_alt(self, azm: float, alt: float) -> None:
         '''GOTO the specified azimuth and elevation, with high precision.'''
         command = 'b{},{}'.format(b24_to_hex8(rad_to_b24(azm)), b24_to_hex8(rad_to_b24(alt)))
         self._speak(command, 0)
 
-    def get_tracking_mode(self):
+    def get_tracking_mode(self) -> TrackingMode:
         '''Get the current TrackingMode of the telescope.'''
         return TrackingMode(ord(self._speak('t', 1)))
 
-    def set_tracking_mode(self, mode):
+    def set_tracking_mode(self, mode: TrackingMode) -> None:
         '''Set the current TrackingMode of the telescope.'''
         self._speak('T{}'.format(chr(mode.value)), 0)
 
-    def slew_azm_or_ra(self, rate):
+    def slew_azm_or_ra(self, rate: float) -> None:
         '''
         Set the azimuth/RA slew rate of the telescope, in radians per second.
 
@@ -656,7 +555,7 @@ class NexStar(object):
         dir_arg = chr(6) if rate >= 0 else chr(7)
         self._speak('P' + chr(3) + chr(16) + dir_arg + arg_hi + arg_lo + chr(0) + chr(0), 0)
 
-    def slew_alt_or_dec(self, rate):
+    def slew_alt_or_dec(self, rate: float) -> None:
         '''Set the elevation/declination slew rate of the telescope, in radians per second.'''
         arg = rad_to_quarterarcseconds(min(abs(rate), 0.079121))
         arg = min(arg, 0xffff)
@@ -665,47 +564,47 @@ class NexStar(object):
         dir_arg = chr(6) if rate >= 0 else chr(7)
         self._speak('P' + chr(3) + chr(17) + dir_arg + arg_hi + arg_lo + chr(0) + chr(0), 0)
 
-    def slew_azm(self, rate):
+    def slew_azm(self, rate: float) -> None:
         self.slew_azm_or_ra(rate)
 
-    def slew_alt(self, rate):
+    def slew_alt(self, rate: float) -> None:
         self.slew_alt_or_dec(rate)
 
-    def slew_ra(self, rate):
+    def slew_ra(self, rate: float) -> None:
         self.slew_azm_or_ra(-rate)
 
-    def slew_dec(self, rate):
+    def slew_dec(self, rate: float) -> None:
         self.slew_alt_or_dec(rate)
 
-    def slew_azmalt(self, azm_rate, alt_rate):
+    def slew_azmalt(self, azm_rate: float, alt_rate: float) -> None:
         '''Set the Az/Alt slew rates.'''
         self.slew_azm(azm_rate)
         self.slew_alt(alt_rate)
 
-    def slew_radec(self, ra_rate, dec_rate):
+    def slew_radec(self, ra_rate: float, dec_rate: float) -> None:
         '''Set the RA/Dec slew rates.'''
         self.slew_ra(ra_rate)
         self.slew_dec(dec_rate)
 
-    def is_goto_in_progress(self):
+    def is_goto_in_progress(self) -> bool:
         '''Return True if a GOTO is in progress.'''
         response = self._speak('L', 1)
         assert response in '01'
         return response == '1'
 
-    def get_focus_position(self):
+    def get_focus_position(self) -> int:
         '''Get the position of the focus motor. Units are unclear.'''
         r = self._speak('P' + chr(1) + chr(18) + chr(1) + chr(0) + chr(0) + chr(0) + chr(3), 3)
         return ord(r[0])*256*256 + ord(r[1])*256 + ord(r[2])
 
-    def goto_focus(self, focus_position):
+    def goto_focus(self, focus_position: float) -> None:
         '''Tell the focus motor to go to a specific position. Units are unclear.'''
         arg_hi = chr(int(focus_position / 256 / 256))
         arg_md = chr(int(focus_position / 256 % 256))
         arg_lo = chr(int(focus_position % 256))
         self._speak('P' + chr(4) + chr(18) + chr(2) + arg_hi + arg_md + arg_lo + chr(0), 0)
 
-    def goto_focus_dist(self, distance):
+    def goto_focus_dist(self, distance: float) -> None:
         '''
         Tell the focus motor to set the focal length of the telescope to a certain distance, in meters.
 
@@ -724,7 +623,7 @@ class NexStar(object):
 
         self.goto_focus(slope * math.atan(distance) + offset)
 
-    def get_focus_limits(self):
+    def get_focus_limits(self) -> tuple[int, int]:
         '''Return the minimum and maximum focus positions. Units are unclear.'''
         r = self._speak('P' + chr(1) + chr(18) + chr(44) + chr(0) + chr(0) + chr(0) + chr(8), 8)
         lo = ord(r[0])

@@ -30,64 +30,69 @@ import threading
 import multiprocessing
 import time
 
+from typing import TypeVar, Any, Generic
+
 import astropy.coordinates as coords
 import astropy.units as units
 
 import util
+from util import unwrap, assert_float
 
 # Airplane data is considered stale if it's older than 30 seconds.
 DROP_TIME_NS = 30e9
 
 METERS_PER_FOOT = 0.3048
 
-class TimestampedDatum(object):
+T = TypeVar('T')
+
+class TimestampedDatum(Generic[T]):
     '''
     Records a data point about an airplane, and the time at which that data point
     was received. If this data point is calculated from several others, then it
     records the range of receipt times of the underlying data.
     '''
-    def __init__(self):
-        self.value = None       # The data point.
-        self.min_time_ns = None # Earliest timestamp of any component of this datum.
-        self.max_time_ns = None # Latest timestamp of any component of this datum.
+    def __init__(self) -> None:
+        self.value: T | None = None       # The data point.
+        self.min_time_ns: int | None = None # Earliest timestamp of any component of this datum.
+        self.max_time_ns: int | None = None # Latest timestamp of any component of this datum.
 
-    def set_time(self, time_ns):
+    def set_time(self, time_ns: int) -> None:
         '''Set the receipt time of this data point.'''
         self.min_time_ns = time_ns
         self.max_time_ns = time_ns
 
-    def set_times_from(self, others):
+    def set_times_from(self, others: list[Any]) -> None:
         '''
         Set the receipt time range of this data point to encompass the time ranges of
         several others. This is useful when calculating derived or composite data.
         '''
-        self.min_time_ns = min([o.min_time_ns for o in others])
-        self.max_time_ns = max([o.max_time_ns for o in others])
+        self.min_time_ns = min([unwrap(o.min_time_ns) for o in others])
+        self.max_time_ns = max([unwrap(o.max_time_ns) for o in others])
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.value)
 
-class RawAirplane(object):
+class RawAirplane:
     '''
     Records raw data about an airplane as received over the network,
     and provides a function to determine whether the data set is complete.
     This is necessary because not all incoming messages contain all the relevant
     information about an airplane.
     '''
-    def __init__(self):
-        self.hex         = TimestampedDatum()
-        self.callsign    = TimestampedDatum()
-        self.altitude    = TimestampedDatum()
-        self.groundspeed = TimestampedDatum()
-        self.track       = TimestampedDatum()
-        self.lat         = TimestampedDatum()
-        self.lon         = TimestampedDatum()
-        self.vrate       = TimestampedDatum()
+    def __init__(self) -> None:
+        self.hex         : TimestampedDatum[str]   = TimestampedDatum()
+        self.callsign    : TimestampedDatum[str]   = TimestampedDatum()
+        self.altitude    : TimestampedDatum[float] = TimestampedDatum()
+        self.groundspeed : TimestampedDatum[float] = TimestampedDatum()
+        self.track       : TimestampedDatum[float] = TimestampedDatum()
+        self.lat         : TimestampedDatum[float] = TimestampedDatum()
+        self.lon         : TimestampedDatum[float] = TimestampedDatum()
+        self.vrate       : TimestampedDatum[float] = TimestampedDatum()
 
         self.callsign.value = '?'
         self.callsign.set_time(0)
 
-    def complete_data(self):
+    def complete_data(self) -> bool:
         '''
         Return True if all the necessary data is present to attempt pointing
         a telescope at the airplane.
@@ -101,7 +106,7 @@ class RawAirplane(object):
                self.lon.value         is not None and \
                self.vrate.value       is not None
 
-class Airplane(object):
+class Airplane:
     '''
     This is a more processed representation of the data about an airplane,
     more suitable for pointing telescopes. It can be computed from a RawAirplane
@@ -112,15 +117,15 @@ class Airplane(object):
     expressed in the North East Down (NED) frame of the observatory,
     and the azimuth, elevation, and range from the observatory.
     '''
-    def __init__(self):
-        self.hex      = TimestampedDatum()
-        self.callsign = TimestampedDatum()
-        self.pos_ned  = TimestampedDatum() # meters        in the NED frame of the observatory
-        self.vel_ned  = TimestampedDatum() # meters/second in the NED frame of the observatory
-        self.az       = TimestampedDatum() # radians
-        self.el       = TimestampedDatum() # radians
-        self.range    = TimestampedDatum() # meters
-        self.in_space = TimestampedDatum() # boolean, approximate
+    def __init__(self) -> None:
+        self.hex      : TimestampedDatum[str]           = TimestampedDatum()
+        self.callsign : TimestampedDatum[str]           = TimestampedDatum()
+        self.pos_ned  : TimestampedDatum[numpy.ndarray] = TimestampedDatum() # meters        in the NED frame of the observatory
+        self.vel_ned  : TimestampedDatum[numpy.ndarray] = TimestampedDatum() # meters/second in the NED frame of the observatory
+        self.az       : TimestampedDatum[float]         = TimestampedDatum() # radians
+        self.el       : TimestampedDatum[float]         = TimestampedDatum() # radians
+        self.range    : TimestampedDatum[float]         = TimestampedDatum() # meters
+        self.in_space : TimestampedDatum[bool]          = TimestampedDatum() # boolean, approximate
 
         # The timestamp of the latitude measurement (and in practice, the longitude measurement
         # because empirically these typically come together). It is useful to track this
@@ -128,12 +133,17 @@ class Airplane(object):
         # altitude, and when extrapolating an airplane's position, the latitude and longitude
         # typically change much faster than the altitude. As such, this is the most useful time
         # to begin extrapolating from.
-        self.lat_time_ns = None
+        self.lat_time_ns: int | None = None
 
-    def __str__(self):
-        return '{} {} {:6.1f} {:6.1f} {:10.1f} {:6.1f}'.format(self.hex, self.callsign, self.az.value / 2 / math.pi * 360, self.el.value / 2 / math.pi * 360, self.range.value, self.track.value)
+    def __str__(self) -> str:
+        return '{} {} {:6.1f} {:6.1f} {:10.1f}'.format(
+            self.hex,
+            self.callsign,
+            unwrap(self.az.value) / 2 / math.pi * 360,
+            unwrap(self.el.value) / 2 / math.pi * 360,
+            unwrap(self.range.value))
 
-    def extrapolate(self, time_ns):
+    def extrapolate(self, time_ns: int) -> 'Airplane':
         '''Extrapolate this airplane's state into the future, and return a new Airplane object.'''
         new = Airplane()
 
@@ -147,10 +157,10 @@ class Airplane(object):
         new.lat_time_ns = time_ns
 
         # How far into the future are we extrapolating, in seconds?
-        extrapolation_time = (time_ns - self.lat_time_ns) / 1e9
+        extrapolation_time = (time_ns - unwrap(self.lat_time_ns)) / 1e9
 
         # Extrapolate the position based on the velocity.
-        new.pos_ned.value = self.pos_ned.value + new.vel_ned.value * extrapolation_time
+        new.pos_ned.value = unwrap(self.pos_ned.value) + unwrap(new.vel_ned.value) * extrapolation_time
         new.pos_ned.set_time(time_ns)
 
         # Compute azimuth, elevation, and range from observatory.
@@ -161,13 +171,13 @@ class Airplane(object):
 
         return new
 
-class Sbs1Receiver(object):
+class Sbs1Receiver:
     '''
     Manages a collection of threads and processes that ingest SBS-1 data from airplane
     servers and turn it into a continuously updated dict of Airplane objects that can
     be accessed from the main thread by calling self.get_planes().
     '''
-    def __init__(self, plane_servers, observatory):
+    def __init__(self, plane_servers: list[str], observatory: coords.EarthLocation):
         '''Start all the threads and processes that do the work.'''
         # For each server, start a new multiprocessing.Process to receive data from it.
         # Each process has an associated multiprocessing.Queue to emit data
@@ -175,7 +185,7 @@ class Sbs1Receiver(object):
         sock_to_compute_qs = []
         self.socket_procs = []
         for plane_server in plane_servers:
-            sock_to_compute_q = multiprocessing.Queue()
+            sock_to_compute_q: multiprocessing.Queue[RawAirplane] = multiprocessing.Queue()
             socket_proc = multiprocessing.Process(
                 target=receive_data,
                 args=(plane_server, sock_to_compute_q))
@@ -187,7 +197,7 @@ class Sbs1Receiver(object):
         # that does the necessary computations to filter the data and turn RawAirplane
         # objects into Airplane objects. The Airplane objects are emitted from another
         # queue (compute_to_main_q).
-        compute_to_main_q = multiprocessing.Queue()
+        compute_to_main_q: multiprocessing.Queue[Airplane] = multiprocessing.Queue()
         self.compute_proc = multiprocessing.Process(
             target=compute_airplanes,
             args=(observatory, sock_to_compute_qs, compute_to_main_q))
@@ -198,10 +208,10 @@ class Sbs1Receiver(object):
         # access to which is controlled by self.lock. The main thread in the main
         # process can access this data via self.get_planes().
         self.lock = threading.Lock()
-        self.airplanes = dict()
+        self.airplanes: dict[str, Airplane] = dict()
 
         self.stop_threads = False
-        def run_dequeue_thread():
+        def run_dequeue_thread() -> None:
             self.run_dequeue_thread(compute_to_main_q)
         self.dequeue_thread = threading.Thread(target=run_dequeue_thread)
         self.dequeue_thread.start()
@@ -209,7 +219,7 @@ class Sbs1Receiver(object):
         # The point of all this nonsense is to run the expensive airplane computations
         # on a separate core from the main thread, which must run in real time.
 
-    def close(self):
+    def close(self) -> None:
         '''Stop all the processes and threads.'''
         self.stop_threads = True
         self.compute_proc.terminate()
@@ -217,7 +227,7 @@ class Sbs1Receiver(object):
             proc.terminate()
         self.dequeue_thread.join()
 
-    def run_dequeue_thread(self, in_q):
+    def run_dequeue_thread(self, in_q: 'multiprocessing.Queue[Airplane]') -> None:
         '''Thread that dequeues the output of the compute process and updates self.airplanes.'''
         # We periodically sweep self.airplanes for stale data and delete it.
         # This is when the last sweep happened so we know when it's time for
@@ -233,7 +243,7 @@ class Sbs1Receiver(object):
                 while True:
                     new = in_q.get_nowait()
                     with self.lock:
-                        self.airplanes[new.hex.value] = new
+                        self.airplanes[unwrap(new.hex.value)] = new
                     took_action_this_cycle = True
             except queue.Empty:
                 pass
@@ -243,7 +253,7 @@ class Sbs1Receiver(object):
             if last_sweep_time + 1e9 < time.monotonic_ns():
                 with self.lock:
                     for hex_code in list(self.airplanes.keys()):
-                        if time.monotonic_ns() - self.airplanes[hex_code].hex.max_time_ns > DROP_TIME_NS:
+                        if time.monotonic_ns() - unwrap(self.airplanes[hex_code].hex.max_time_ns) > DROP_TIME_NS:
                             print('Drop (main) ', self.airplanes[hex_code].callsign.value)
                             del self.airplanes[hex_code]
                 last_sweep_time = time.monotonic_ns()
@@ -254,12 +264,12 @@ class Sbs1Receiver(object):
             if not took_action_this_cycle:
                 time.sleep(0.05)
 
-    def get_planes(self):
+    def get_planes(self) -> dict[str, Airplane]:
         '''Get a dict from hex codes to Airplane objects for Airplanes currently present.'''
         with self.lock:
             return copy.deepcopy(self.airplanes)
 
-def receive_data(plane_server, out_q):
+def receive_data(plane_server: str, out_q: 'multiprocessing.Queue[RawAirplane]') -> None:
     '''Process that receives SBS-1 data from a server and emits RawAirplane objects in a queue.'''
     # SBS-1 data is a sequence of comma separated values. Not all fields are present in
     # every message, but every message has the same number of commas, so by skipping
@@ -390,7 +400,7 @@ def receive_data(plane_server, out_q):
             if airplane.complete_data():
                 out_q.put(airplane)
 
-def compute_airplane(observatory, raw_plane):
+def compute_airplane(observatory: coords.EarthLocation, raw_plane: RawAirplane) -> Airplane:
     '''Turn a RawAirplane into an Airplane.'''
     assert raw_plane.complete_data()
 
@@ -401,7 +411,8 @@ def compute_airplane(observatory, raw_plane):
     plane.lat_time_ns = raw_plane.lat.max_time_ns
 
     # The McDowell line is considered to be the edge of space.
-    plane.in_space = raw_plane.altitude.value * METERS_PER_FOOT > 80000
+    plane.in_space.set_times_from([raw_plane.altitude])
+    plane.in_space.value = unwrap(raw_plane.altitude.value) * METERS_PER_FOOT > 80000
 
     # POSITION
 
@@ -419,7 +430,7 @@ def compute_airplane(observatory, raw_plane):
     # VELOCITY
 
     # Get the azimuth along which the airplane is travelling, in radians.
-    vel_az = raw_plane.track.value / 360 * 2 * math.pi
+    vel_az = unwrap(raw_plane.track.value) / 360 * 2 * math.pi
 
     # Compute the velocity of the airplane in the airplane's NED frame.
     vel_ned_of_plane = numpy.array([
@@ -447,14 +458,14 @@ def compute_airplane(observatory, raw_plane):
     plane.az.set_times_from([plane.pos_ned])
     plane.el.set_times_from([plane.pos_ned])
     plane.range.set_times_from([plane.pos_ned])
-    plane.az.value, plane.el.value, plane.range.value = util.ned_to_aer(plane.pos_ned.value)
+    plane.az.value, plane.el.value, plane.range.value = util.ned_to_aer(unwrap(plane.pos_ned.value))
 
     return plane
 
-def compute_airplanes(observatory, in_qs, out_q):
+def compute_airplanes(observatory: coords.EarthLocation, in_qs: list['multiprocessing.Queue[RawAirplane]'], out_q: 'multiprocessing.Queue[Airplane]') -> None:
     '''Process that filters RawAirplane data and produces Airplane objects.'''
     # Contains up to date Airplane objects for all planes we've seen.
-    computed_airplanes = dict()
+    computed_airplanes: dict[str, Airplane] = dict()
 
     while True:
         # Dequeue all the RawAirplane objects that have incorporated a new message.
@@ -464,7 +475,7 @@ def compute_airplanes(observatory, in_qs, out_q):
                 while True:
                     new_raw = in_q.get_nowait()
                     # Modify the unique hex identifiers to avoid collisions between different data sources.
-                    new_raw.hex.value = hex(q_idx) + new_raw.hex.value
+                    new_raw.hex.value = hex(q_idx) + unwrap(new_raw.hex.value)
                     planes_with_updates[new_raw.hex.value] = new_raw
             except queue.Empty:
                 pass
@@ -493,7 +504,7 @@ def compute_airplanes(observatory, in_qs, out_q):
                 take_update = True
             else:
                 old_plane = computed_airplanes[hex_code]
-                if new_plane.lat_time_ns > old_plane.lat_time_ns + DROP_TIME_NS:
+                if unwrap(new_plane.lat_time_ns) > unwrap(old_plane.lat_time_ns) + DROP_TIME_NS:
                     # If the old data for this plane is from a long time ago, take the update.
                     print('Drop (old)  ', new_plane.callsign.value)
                     take_update = True
@@ -513,11 +524,13 @@ def compute_airplanes(observatory, in_qs, out_q):
                     # then the delta will be very large and we'll take the update, but if the old position was
                     # good and the new position is stale, the delta will be small or zero and we will ignore
                     # the new position.
-                    extrapolation_time = (new_plane.lat_time_ns - old_plane.lat_time_ns) / 1e9
-                    avg_vel_ned = new_plane.vel_ned.value/2.0 + old_plane.vel_ned.value/2.0
-                    delta_pos_ned_new = new_plane.pos_ned.value - old_plane.pos_ned.value
+                    extrapolation_time = (unwrap(new_plane.lat_time_ns) - unwrap(old_plane.lat_time_ns)) / 1e9
+                    avg_vel_ned = unwrap(new_plane.vel_ned.value)/2.0 + unwrap(old_plane.vel_ned.value)/2.0
+                    delta_pos_ned_new = unwrap(new_plane.pos_ned.value) - unwrap(old_plane.pos_ned.value)
                     delta_pos_ned_old = extrapolation_time * avg_vel_ned
-                    take_update = numpy.linalg.norm(delta_pos_ned_new) > numpy.linalg.norm(delta_pos_ned_old) * 0.5
+                    norm_new = assert_float(numpy.linalg.norm(delta_pos_ned_new))
+                    norm_old = assert_float(numpy.linalg.norm(delta_pos_ned_old))
+                    take_update = norm_new > norm_old * 0.5
                     if not take_update:
                         print('Drop (pos)  ', new_plane.callsign.value)
 

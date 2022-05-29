@@ -1,10 +1,13 @@
 astropy
 mypy
 pyserial
+types-pyserial
 PyOpenGL
 PyOpenGL_accelerate
 PyOpenGL-Demo
 pyyaml
+types-pyyaml
 numpy
 scipy
+scipy-stubs
 sgp4
