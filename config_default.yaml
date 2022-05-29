@@ -30,6 +30,8 @@ sbs1_servers:
 
 telescope_server: localhost:45345
 
+telescope_protocol: nexstar-hand-control
+
 mount_mode: altaz
 
 serial_port: auto

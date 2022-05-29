@@ -10,7 +10,8 @@ I find this convenient because my laptop doesn't have the right drivers, but my 
 The RPC server provides one important command: speak().
 It takes one argument, a line of text to send to the telescope.
 It returns (bool, string), whether the telescope sent a valid-looking response, and what the response was
-(minus the trailing '#' character).
+(minus the trailing '#' character for telescope_protocol='nexstar-hand-control',
+or minus the leading '=' and trailing '\\r' for telescope_protocol='az-eq6-eqdirect').
 '''
 
 import ast
@@ -24,17 +25,34 @@ import rpc
 
 BAUD_RATE = 9600
 
-def read_response(telescope):
+def process_response(response, telescope_protocol):
+    if telescope_protocol == 'nexstar-hand-control':
+        if len(response) == 0:
+            return None
+        if response[-1] != '#':
+            return None
+        return response[:-1]
+    else:
+        assert telescope_protocol == 'az-eq6-eqdirect'
+        if len(response) == 0:
+            return None
+        if response[0] != '=':
+            return None
+        if response[-1] != '\r':
+            return None
+        return response[1:-1]
+
+def read_response(telescope, telescope_protocol):
     response = ''
     start = time.monotonic()
-    while start + 3.5 > time.monotonic() and '#' not in response:
+    while start + 3.5 > time.monotonic() and process_response(response, telescope_protocol) is None:
         response += telescope.read().decode(encoding='ISO-8859-1')
     return response
 
 def hello():
     return 'hello'
 
-def nexstar_serial_udp_server(serial_port, net_port):
+def nexstar_serial_udp_server(serial_port, net_port, telescope_protocol):
     print('Opening', serial_port)
     sys.stdout.flush()
     telescope = serial.Serial(port=serial_port, baudrate=BAUD_RATE, timeout=0)
@@ -42,11 +60,12 @@ def nexstar_serial_udp_server(serial_port, net_port):
     def speak(line):
         telescope.write(line.encode(encoding='ISO-8859-1'))
 
-        response = read_response(telescope)
-        if len(response) == 0 or response[-1] != '#':
+        response = read_response(telescope, telescope_protocol)
+        processed = process_response(response, telescope_protocol)
+        if processed is None:
             return (False, response)
         else:
-            return (True, response[:-1])
+            return (True, processed)
 
     print('Starting RPC server...')
     sys.stdout.flush()
@@ -72,6 +91,10 @@ def parse_args_and_config():
         '--network-port', type=int, default=45345,
         help='Which network port to use (default: 45345)')
 
+    parser.add_argument(
+        '--telescope-protocol', type=str, default=config_data['telescope_protocol'],
+        help='Which protocol to use to talk to the telescope (default: {})'.format(config_data['telescope_protocol']))
+
     return parser.parse_args(), config_data
 
 def main():
@@ -89,7 +112,7 @@ def main():
             print('Unable to find serial port for telescope.')
             sys.stdout.flush()
             sys.exit(1)
-    nexstar_serial_udp_server(serial_port, args.network_port)
+    nexstar_serial_udp_server(serial_port, args.network_port, args.telescope_protocol)
 
 if __name__ == '__main__':
     main()
