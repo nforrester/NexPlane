@@ -600,6 +600,12 @@ class NexStar(object):
         dir_arg = chr(6) if rate >= 0 else chr(7)
         self._speak('P' + chr(3) + chr(17) + dir_arg + arg_hi + arg_lo + chr(0) + chr(0), 0)
 
+    def slew_ra(self, rate):
+        self.slew_azm(rate)
+
+    def slew_dec(self, rate):
+        self.slew_alt(rate)
+
     def slew(self, azm_rate, alt_rate):
         '''Convenience function for calling slew_azm() and slew_alt() one after the other.'''
         self.slew_azm(azm_rate)

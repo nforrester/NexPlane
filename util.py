@@ -103,3 +103,6 @@ def configured_earth_location(config_data, name):
     lon = config_data['locations'][name]['lon_degrees']
     alt = config_data['locations'][name]['alt_meters']
     return coords.EarthLocation.from_geodetic(lon, lat, alt*units.m, 'WGS84')
+
+def altaz_to_radec(alt, azm):
+    pass

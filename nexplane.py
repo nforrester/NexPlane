@@ -69,6 +69,13 @@ def parse_args_and_config():
              '(default: ' + config_data['telescope_server'] + ')')
 
     parser.add_argument(
+        '--mount-mode', type=str, default=config_data['mount_mode'],
+        help='Type of telescope mount, either altaz or eq. Default: {}'.format(
+            config_data['mount_mode']
+        )
+    )
+
+    parser.add_argument(
         '--sbs1', type=str, action='append', default=[],
         help='The host:port of an SBS1 server for airplane data. You can '
              'specify this argument multiple times in order to receive data '
