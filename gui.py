@@ -155,62 +155,65 @@ class Gui(object):
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glLoadIdentity()
 
+        # Set the colors of the UI elements.
         if self.black_and_white:
-            # Forget the colors and make them all white (the background is black).
+            # Forget the colors and make them all white or black (whichever is the opposite of the background).
             # This is useful for raising contrast when operating in direct sunlight.
             if self.white_bg:
                 all_black = (0.0, 0.0, 0.0)
-                yellow  = all_black
-                yellow2 = all_black
-                red     = all_black
-                blue    = all_black
-                blue2   = all_black
-                green   = all_black
-                orange  = all_black
-                orange2 = all_black
-                gray    = all_black
+
+                sun_color                  = all_black
+                telescope_color            = all_black
+                untracked_last_known_color = all_black
+                untracked_projected_color  = all_black
+                horizon_color              = all_black
+                tracked_last_known_color   = all_black
+                tracked_projected_color    = all_black
+                moon_color                 = all_black
             else:
                 all_white = (1.0, 1.0, 1.0)
-                yellow  = all_white
-                yellow2 = all_white
-                red     = all_white
-                blue    = all_white
-                blue2   = all_white
-                green   = all_white
-                orange  = all_white
-                orange2 = all_white
-                gray    = all_white
+
+                sun_color                  = all_white
+                telescope_color            = all_white
+                untracked_last_known_color = all_white
+                untracked_projected_color  = all_white
+                horizon_color              = all_white
+                tracked_last_known_color   = all_white
+                tracked_projected_color    = all_white
+                moon_color                 = all_white
         else:
             # Define some useful colors
-            yellow  = (1.0, 1.0, 0.0)
-            yellow2 = (1.0, 0.8, 0.0)
-            red     = (1.0, 0.0, 0.0)
-            blue    = (0.4, 0.4, 1.0)
-            blue2   = (0.6, 0.6, 1.0)
-            green   = (0.2, 0.6, 0.2)
-            orange  = (1.0, 0.4, 0.4)
-            orange2 = (1.0, 0.6, 0.6)
-            gray    = (0.8, 0.8, 0.8)
+            if self.white_bg:
+                sun_color  = (1.0, 0.5, 0.0) # Dark yellow
+                moon_color = (0.0, 0.0, 0.0) # Black
+            else:
+                sun_color  = (1.0, 1.0, 0.0) # Bright yellow
+                moon_color = (0.8, 0.8, 0.8) # Gray
+            telescope_color            = (1.0, 0.0, 0.0) # Red
+            untracked_last_known_color = (0.4, 0.4, 1.0) # Dark blue
+            untracked_projected_color  = (0.6, 0.6, 1.0) # Light blue
+            horizon_color              = (0.2, 0.6, 0.2) # Green
+            tracked_last_known_color   = (1.0, 0.4, 0.4) # Dark orange
+            tracked_projected_color    = (1.0, 0.6, 0.6) # Light orange
 
-        # Draw the horizon and axis labels in green.
-        self._draw_horizon(green)
+        # Draw the horizon and axis labels.
+        self._draw_horizon(horizon_color)
 
         # Radius of the telescope field of view, in radians.
         # The present value is a bit high for my scope,
         # but it just controls the size of some markers on the screen so it's not very important.
         view_radius = 0.5/180*math.pi
 
-        # Draw a red cross and circle where the telescope is pointing.
-        self._draw_marker(red, view_radius, scope_azm, scope_alt)
-        self._draw_sky_circle(red, 1/180*math.pi, scope_azm, scope_alt)
+        # Draw a cross and circle where the telescope is pointing.
+        self._draw_marker(telescope_color, view_radius, scope_azm, scope_alt)
+        self._draw_sky_circle(telescope_color, 1/180*math.pi, scope_azm, scope_alt)
 
-        # Draw the Moon in gray.
+        # Draw the Moon.
         sun_moon_angular_radius = 0.26/180*math.pi
-        self._draw_marker(gray, sun_moon_angular_radius, moon_azm, moon_alt, 'Moon')
-        self._draw_sky_circle(gray, sun_moon_angular_radius, moon_azm, moon_alt)
+        self._draw_marker(moon_color, sun_moon_angular_radius, moon_azm, moon_alt, 'Moon')
+        self._draw_sky_circle(moon_color, sun_moon_angular_radius, moon_azm, moon_alt)
 
-        # Draw the Sun in yellow, and some bright warning circles around it.
-        sun_color = yellow2 if self.white_bg else yellow
+        # Draw the Sun, and some bright warning circles around it.
         self._draw_marker(sun_color, sun_moon_angular_radius, sun_azm, sun_alt, 'Sun')
         self._draw_sky_circle(sun_color, sun_moon_angular_radius, sun_azm, sun_alt)
         self._draw_sky_circle(sun_color, 5/180*math.pi, sun_azm, sun_alt)
@@ -220,24 +223,25 @@ class Gui(object):
 
         # Draw the airplanes.
         for airplane in airplanes.values():
-            # If this is the tracked airplane, draw it in orange. Draw untracked airplanes in blue.
+            # If this is the tracked airplane, draw it in one color scheme.
+            # Draw untracked airplanes in a different color scheme.
             with self.iface_lock:
                 if self.iface_tracked_plane == airplane.hex.value:
-                    color = orange
-                    color2 = orange2
+                    last_known_color = tracked_last_known_color
+                    projected_color  = tracked_projected_color
                 else:
-                    color = blue
-                    color2 = blue2
+                    last_known_color = untracked_last_known_color
+                    projected_color  = untracked_projected_color
 
             # Draw a marker for this airplane.
-            self._draw_marker(color, view_radius, airplane.az.value, airplane.el.value, airplane.callsign.value)
+            self._draw_marker(last_known_color, view_radius, airplane.az.value, airplane.el.value, airplane.callsign.value)
 
             # If this is the tracked airplane, extrapolate its current location based on the
             # last update and put a secondary marker there. Ideally we would do this for every airplane,
             # but the extrapolation is expensive and my laptop is only so fast. Maybe yours is faster.
             if self.iface_tracked_plane == airplane.hex.value:
                 extrapolated = airplane.extrapolate(time.monotonic_ns())
-                self._draw_marker(color2, view_radius, extrapolated.az.value, extrapolated.el.value)
+                self._draw_marker(projected_color, view_radius, extrapolated.az.value, extrapolated.el.value)
 
         # Update the screen.
         glut.glutSwapBuffers()
