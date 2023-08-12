@@ -368,26 +368,26 @@ class Gui(object):
             elif key == b'D' or key == b'L':
                 self.iface_azm_offset += big_motion
             # Q or O resets the offset.
-            elif key == b'q' or key == b'o':
+            elif key in [b'q', b'Q', b'o', b'O']:
                 self.iface_azm_offset = 0.0
                 self.iface_alt_offset = 0.0
             # RFTGYH adjust the PID controller gains up and down.
-            elif key == b'r':
+            elif key in [b'r', b'R']:
                 self.iface_kp += 0.01
                 self.iface_gain_changes += 1
-            elif key == b'f':
+            elif key in [b'f', b'F']:
                 self.iface_kp -= 0.01
                 self.iface_gain_changes += 1
-            elif key == b't':
+            elif key in [b't', b'T']:
                 self.iface_ki += 0.01
                 self.iface_gain_changes += 1
-            elif key == b'g':
+            elif key in [b'g', b'G']:
                 self.iface_ki -= 0.01
                 self.iface_gain_changes += 1
-            elif key == b'y':
+            elif key in [b'y', b'Y']:
                 self.iface_kd += 0.01
                 self.iface_gain_changes += 1
-            elif key == b'h':
+            elif key in [b'h', b'H']:
                 self.iface_kd -= 0.01
                 self.iface_gain_changes += 1
 
