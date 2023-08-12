@@ -329,6 +329,8 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
       --bw                  Make the display black and white (this is useful for
                             increasing contrast when operating in direct
                             sunlight).
+      --white-bg            Make the display background white (this is useful to read more easily
+                            on dimmer screens when operating in direct sunlight).
       --location LOCATION   Where are you? Pick a named location from your config file
                             (default: home)
       --landmark LANDMARK   If it is not possible to use the telescope's internal alignment
