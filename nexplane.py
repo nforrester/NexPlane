@@ -48,6 +48,11 @@ def parse_args_and_config():
              'increasing contrast when operating in direct sunlight).')
 
     parser.add_argument(
+        '--white-bg', action='store_true',
+        help='Make the display background white (this is useful to read more '
+             'easily on dimmer screens when operating in direct sunlight).')
+
+    parser.add_argument(
         '--location', type=str, default=config_data['location'],
         help='Where are you? Pick a named location from your config file '
              '(default: ' + config_data['location'] + ')')
@@ -111,7 +116,7 @@ def main():
     kd = config_data['gains']['kd']
 
     # Run the GUI.
-    gui_iface = gui.Gui(args.bw, kp, ki, kd)
+    gui_iface = gui.Gui(args.bw, args.white_bg, kp, ki, kd)
 
     try:
         # Telescope control interface.
