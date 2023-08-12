@@ -24,8 +24,9 @@ class Exit(Exception):
 
 class Gui(object):
     '''Runs the GUI and provides the interface between it and the main thread.'''
-    def __init__(self, black_and_white, kp, ki, kd):
+    def __init__(self, black_and_white, white_bg, kp, ki, kd):
         self.black_and_white = black_and_white
+        self.white_bg = white_bg
 
         # Interface variables, shared between main and gui thread.
         self.iface_scope_azm_alt = (0.0, 0.0)  # Where is the telescope pointing? (azimuth, elevation). radians.
@@ -105,8 +106,11 @@ class Gui(object):
         glut.glutMouseFunc(self._handle_mouse)
         glut.glutCloseFunc(self._handle_close_window)
 
-        # More boring OpenGL setup stuff. Set the background to black.
-        gl.glClearColor(0.0, 0.0, 0.0, 0.0)
+        # More boring OpenGL setup stuff. Set the background color depending on flag.
+        if self.white_bg:
+            gl.glClearColor(255.0, 255.0, 255.0, 0.0)
+        else:
+            gl.glClearColor(0.0, 0.0, 0.0, 0.0)
         gl.glClearDepth(1.0)
         gl.glDepthFunc(gl.GL_LEQUAL)
         gl.glEnable(gl.GL_DEPTH_TEST)
@@ -154,17 +158,32 @@ class Gui(object):
         if self.black_and_white:
             # Forget the colors and make them all white (the background is black).
             # This is useful for raising contrast when operating in direct sunlight.
-            yellow  = (1.0, 1.0, 1.0)
-            red     = (1.0, 1.0, 1.0)
-            blue    = (1.0, 1.0, 1.0)
-            blue2   = (1.0, 1.0, 1.0)
-            green   = (1.0, 1.0, 1.0)
-            orange  = (1.0, 1.0, 1.0)
-            orange2 = (1.0, 1.0, 1.0)
-            gray    = (1.0, 1.0, 1.0)
+            if self.white_bg:
+                all_black = (0.0, 0.0, 0.0)
+                yellow  = all_black
+                yellow2 = all_black
+                red     = all_black
+                blue    = all_black
+                blue2   = all_black
+                green   = all_black
+                orange  = all_black
+                orange2 = all_black
+                gray    = all_black
+            else:
+                all_white = (1.0, 1.0, 1.0)
+                yellow  = all_white
+                yellow2 = all_white
+                red     = all_white
+                blue    = all_white
+                blue2   = all_white
+                green   = all_white
+                orange  = all_white
+                orange2 = all_white
+                gray    = all_white
         else:
             # Define some useful colors
             yellow  = (1.0, 1.0, 0.0)
+            yellow2 = (1.0, 0.8, 0.0)
             red     = (1.0, 0.0, 0.0)
             blue    = (0.4, 0.4, 1.0)
             blue2   = (0.6, 0.6, 1.0)
@@ -191,12 +210,13 @@ class Gui(object):
         self._draw_sky_circle(gray, sun_moon_angular_radius, moon_azm, moon_alt)
 
         # Draw the Sun in yellow, and some bright warning circles around it.
-        self._draw_marker(yellow, sun_moon_angular_radius, sun_azm, sun_alt, 'Sun')
-        self._draw_sky_circle(yellow, sun_moon_angular_radius, sun_azm, sun_alt)
-        self._draw_sky_circle(yellow, 5/180*math.pi, sun_azm, sun_alt)
-        self._draw_sky_circle(yellow, 10/180*math.pi, sun_azm, sun_alt)
-        self._draw_sky_circle(yellow, 15/180*math.pi, sun_azm, sun_alt)
-        self._draw_sky_circle(yellow, 20/180*math.pi, sun_azm, sun_alt)
+        sun_color = yellow2 if self.white_bg else yellow
+        self._draw_marker(sun_color, sun_moon_angular_radius, sun_azm, sun_alt, 'Sun')
+        self._draw_sky_circle(sun_color, sun_moon_angular_radius, sun_azm, sun_alt)
+        self._draw_sky_circle(sun_color, 5/180*math.pi, sun_azm, sun_alt)
+        self._draw_sky_circle(sun_color, 10/180*math.pi, sun_azm, sun_alt)
+        self._draw_sky_circle(sun_color, 15/180*math.pi, sun_azm, sun_alt)
+        self._draw_sky_circle(sun_color, 20/180*math.pi, sun_azm, sun_alt)
 
         # Draw the airplanes.
         for airplane in airplanes.values():
