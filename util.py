@@ -3,9 +3,15 @@
 import math
 import numpy
 import scipy.spatial
+import time
 
 import astropy.coordinates as coords
 import astropy.units as units
+import astropy.time
+
+def clamp(value, minimum, maximum):
+    '''Return value, or minimum or maximum if value falls outside that range on one side or the other.'''
+    return min(max(value, minimum), maximum)
 
 def wrap_rad(theta, minimum):
     '''
@@ -104,5 +110,33 @@ def configured_earth_location(config_data, name):
     alt = config_data['locations'][name]['alt_meters']
     return coords.EarthLocation.from_geodetic(lon, lat, alt*units.m, 'WGS84')
 
-def altaz_to_radec(alt, azm):
-    pass
+def get_current_time():
+    '''Get the current time as an astropy.time.Time object.'''
+    return astropy.time.Time(time.time(), format='unix')
+
+def altaz_to_radec(alt, azm, observatory_location, current_time):
+    '''Converts alt/az coordinates to ra/dec coordinates.'''
+    # Get an astropy.coordinates.AltAz and astropy.coordinates.SkyCoord
+    # corresponding to the given alt and azm.
+    alt_az = coords.AltAz(
+        obstime=current_time,
+        location=observatory_location,
+        az=wrap_rad(azm, -math.pi) * units.rad,
+        alt=clamp(wrap_rad(alt, -math.pi), -math.pi/2, math.pi/2) * units.rad)
+    sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+
+    # Convert to ra/dec
+    ra  = sky_coord.ra.to(units.rad).value
+    dec = sky_coord.dec.to(units.rad).value
+
+    return ra, dec
+
+def radec_to_altaz(ra, dec, observatory_location, current_time):
+    '''Converts ra/dec coordinates to alt/az coordinates.'''
+    sky_coord = coords.SkyCoord(ra=ra*units.rad, dec=dec*units.rad)
+    alt_az = sky_coord.transform_to(coords.AltAz(obstime=current_time, location=observatory_location))
+
+    alt = alt_az.alt.to(units.rad).value
+    azm = alt_az.az.to(units.rad).value
+
+    return alt, azm
