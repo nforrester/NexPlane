@@ -133,7 +133,7 @@ def main():
                 continue
 
             # Compute the current position of the satellite.
-            now = astropy.time.Time(time.time(), format='unix')
+            now = util.get_current_time()
             try:
                 earth_loc = sat.earth_location(now)
             except SatError as e:

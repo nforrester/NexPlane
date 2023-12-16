@@ -98,6 +98,7 @@ You can verify that this worked and see how your new `config.yaml` file was comb
         alt_meters: 1742.0
         lat_degrees: 34.222901
         lon_degrees: -118.062696
+    mount_mode: altaz
     sbs1_servers:
     - localhost:30003
     - localhost:40004
@@ -173,6 +174,11 @@ These are the most frequently used buttons:
 | A or H     | Large manual correction left  |
 | D or L     | Large manual correction right |
 | q or o     | Reset manual corrections      |
+
+Note that up and down correspond to elevation above the horizon and left and right correspond
+to azimuth. This is true no matter whether your mount is in alt/az mode or equatorial mode.
+For example, if you have an equatorial mount, pressing "W" will apply an offset in both right
+ascension and declination in order to achieve the correction you specified in elevation.
 
 There are also buttons for adjusting the PID controller gains, which you can experiment with
 if the default gain set is not to your liking. Whenever you make an adjustment the PID
@@ -286,8 +292,8 @@ performing a One-Star Align.
 
 ## Trouble spots
 
-NexPlane is very new. As of this writing it has only been tested by one person, on one set
-of hardware. It contains bugs. If it doesn't work for you, try reading through the code and
+NexPlane probably contains bugs. It has not been tested by a large number of people or on
+diverse mount hardware. If it doesn't work for you, try reading through the code and
 making experimental changes to locate the problem. Diagnostic print statements are your
 friends!
 
@@ -343,6 +349,8 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
       --telescope TELESCOPE
                             The host:port of the telescope_server.py process, which talks to
                             the telescope mount (default: nexstar.local:45345)
+      --mount-mode MODE     Either altaz or eq, corresponding to whether you have an Alt/Az
+                            or equatorial mount.
       --sbs1 SBS1           The host:port of an SBS1 server for airplane data. You can
                             specify this argument multiple times in order to receive data
                             from multiple servers. (default: localhost:30003,

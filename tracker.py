@@ -56,40 +56,52 @@ class PidController(object):
 
 class Tracker(object):
     '''Run a PidController for each axis, and drive the telescope to point at targets.'''
-    def __init__(self, telescope, kp, ki, kd):
+    def __init__(self, telescope, kp, ki, kd, altaz_mode):
+        '''
+        If altaz_mode = True, we'll track in alt/az coordinates.
+        If altaz_mode = False, we'll track in ra/dec coordinates.
+        '''
         self.telescope = telescope
-        self.azm_controller = PidController(kp, ki, kd)
-        self.alt_controller = PidController(kp, ki, kd)
+        self.azm_or_ra_controller = PidController(kp, ki, kd)
+        self.alt_or_dec_controller = PidController(kp, ki, kd)
         self.stopped=False
+        self.altaz_mode = altaz_mode
 
     def set_gains(self, kp, ki, kd):
         '''Set controller gains.'''
-        self.azm_controller.set_gains(kp, ki, kd)
-        self.alt_controller.set_gains(kp, ki, kd)
+        self.azm_or_ra_controller.set_gains(kp, ki, kd)
+        self.alt_or_dec_controller.set_gains(kp, ki, kd)
 
     def stop(self):
         '''Stop the telescope.'''
         if not self.stopped:
-            self.telescope.slew(0, 0)
+            self.telescope.slew_azmalt(0, 0)
             self.telescope.set_tracking_mode(nexstar.TrackingMode.OFF)
             self.stopped = True
-        self.azm_controller.reset()
-        self.alt_controller.reset()
+        self.azm_or_ra_controller.reset()
+        self.alt_or_dec_controller.reset()
 
-    def go(self, target_azm, target_alt):
+    def go(self, target_azm_or_ra, target_alt_or_dec):
         '''
         Set the telescope slew rate to move towards the given position.
         This should be called on every control cycle (unless the tracker is stopped).
         '''
         self.stopped = False
-        actual_azm, actual_alt = self.telescope.get_precise_azm_alt()
-        actual_azm = util.wrap_rad(actual_azm, target_azm-math.pi)
-        slew_rate_azm = self.azm_controller.control(target_azm, actual_azm)
-        slew_rate_alt = self.alt_controller.control(target_alt, actual_alt)
+        if self.altaz_mode:
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_azm_alt()
+        else:
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_ra_dec()
+        actual_azm_or_ra = util.wrap_rad(actual_azm_or_ra, target_azm_or_ra-math.pi)
+        actual_alt_or_dec = util.wrap_rad(actual_alt_or_dec, target_alt_or_dec-math.pi)
+        slew_rate_azm_or_ra = self.azm_or_ra_controller.control(target_azm_or_ra, actual_azm_or_ra)
+        slew_rate_alt_or_dec = self.alt_or_dec_controller.control(target_alt_or_dec, actual_alt_or_dec)
 
-        if abs(slew_rate_azm) > 4/180*math.pi:
-            self.azm_controller.reset()
-        if abs(slew_rate_alt) > 4/180*math.pi:
-            self.alt_controller.reset()
+        if abs(slew_rate_azm_or_ra) > 4/180*math.pi:
+            self.azm_or_ra_controller.reset()
+        if abs(slew_rate_alt_or_dec) > 4/180*math.pi:
+            self.alt_or_dec_controller.reset()
 
-        self.telescope.slew(slew_rate_azm, slew_rate_alt)
+        if self.altaz_mode:
+            self.telescope.slew_azmalt(slew_rate_azm_or_ra, slew_rate_alt_or_dec)
+        else:
+            self.telescope.slew_radec(slew_rate_azm_or_ra, slew_rate_alt_or_dec)

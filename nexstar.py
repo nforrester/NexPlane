@@ -48,13 +48,9 @@ def wrap_b24(theta, minimum):
         theta += 2**24
     return theta
 
-def clamp(value, minimum, maximum):
-    '''Return value, or minimum or maximum if value falls outside that range on one side or the other.'''
-    return min(max(value, minimum), maximum)
-
 def rad_to_b24(radians):
     '''Convert an angle in radians to the 24 bit representation the NexStar serial protocol likes.'''
-    return clamp(int(util.wrap_rad(radians, 0) / (2*math.pi) * (2**24)), 0, 0xffffff)
+    return util.clamp(int(util.wrap_rad(radians, 0) / (2*math.pi) * (2**24)), 0, 0xffffff)
 
 def b24_to_rad(b24):
     '''Convert an angle in the 24 bit representation the NexStar serial protocol likes to radians.'''
@@ -95,10 +91,12 @@ def b24_to_hex8(b24):
     '''Convert a 24 bit angle to an 8 digit hex string (the two least significant digits get set to zero).'''
     return to_hex(8, wrap_b24(b24, 0) << 8)
 
+SIDERIAL_RATE_RADIANS_PER_SECOND = 7.2921150e-5
+
 def fixed_rate_map(fixed_rate):
     '''The telescope has several fixed slew rates you can invoke.
     Given a fixed rate index, return the corresponding rate in quarter arcseconds per second.'''
-    siderial_rate = int(7.2921150e-5 / math.pi * 180 * 60 * 60 * 4)
+    siderial_rate = int(SIDERIAL_RATE_RADIANS_PER_SECOND / math.pi * 180 * 60 * 60 * 4)
     degree_per_second = 60 * 60 * 4
     if fixed_rate == 0:
         return 0
@@ -204,15 +202,21 @@ class NexStarSerialHootl(object):
 
     The simulator runs in a separate thread.
     '''
-    def __init__(self, current_time, observatory_location):
+    def __init__(self, current_time, observatory_location, altaz_mode):
         '''
         current_time should be an astropy.time.Time.
+
         observatory_location should be an astropy.coordinates.EarthLocation.
+
+        altaz_mode should be True (indicating that the mount is vertical)
+                   or False (indicating that it's on an equatorial wedge).
         '''
+        self.altaz_mode = altaz_mode
+
         # Simulator state variables
-        # We assume the telescope is perfectly aligned, and no equatorial wedge is installed.
-        self.state_azm = 0 # 24 bit integer 
-        self.state_alt = 0 # 24 bit integer 
+        # We assume the telescope is perfectly aligned.
+        self.state_azm_or_ra = 0 # 24 bit integer 
+        self.state_alt_or_dec = 0 # 24 bit integer 
 
         self.state_location = observatory_location
         self.state_time = int(current_time.to_value('gps') * 1e9) # Integer nanoseconds since gps epoch.
@@ -276,69 +280,118 @@ class NexStarSerialHootl(object):
 
                 # Get an astropy.coordinates.AltAz and astropy.coordinates.SkyCoord
                 # corresponding to the telescope's current position.
-                alt_az = coords.AltAz(
-                    obstime=current_time,
-                    location=self.state_location,
-                    az=util.wrap_rad(b24_to_rad(self.state_azm), -math.pi) * units.rad,
-                    alt=clamp(util.wrap_rad(b24_to_rad(self.state_alt), -math.pi), -math.pi/2, math.pi/2) * units.rad)
-                sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+                if self.altaz_mode:
+                    alt_az = coords.AltAz(
+                        obstime=current_time,
+                        location=self.state_location,
+                        az=util.wrap_rad(b24_to_rad(self.state_azm_or_ra), -math.pi) * units.rad,
+                        alt=util.clamp(util.wrap_rad(b24_to_rad(self.state_alt_or_dec), -math.pi), -math.pi/2, math.pi/2) * units.rad)
+                    sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+                else:
+                    sky_coord = coords.SkyCoord(ra=b24_to_rad(self.state_azm_or_ra)*units.rad, dec=b24_to_rad(self.state_alt_or_dec)*units.rad)
+                    alt_az = sky_coord.transform_to(coords.AltAz(obstime=current_time, location=self.state_location))
 
                 # Move the telescope, if necessary.
                 next_tracked_sky_coord = None
                 if self.iface_goto_in_progress:
                     # If we're executing a GOTO,
 
-                    # determine the azimuth and elevation of the desired RA and Dec, if necessary,
-                    if not self.iface_goto_azm_alt:
-                        dest_sky_coord = coords.SkyCoord(ra=b24_to_rad(self.iface_cmd_goto_ra) * units.rad,
-                                                         dec=b24_to_rad(self.iface_cmd_goto_dec) * units.rad)
-                        dest_alt_az = dest_sky_coord.transform_to(alt_az)
-                        self.iface_cmd_goto_azm = rad_to_b24(dest_alt_az.az.to(units.rad).value)
-                        self.iface_cmd_goto_alt = rad_to_b24(dest_alt_az.alt.to(units.rad).value)
-
-                    # and move to that position at the maximum possible speed.
+                    # determine the maximum possible speed.
                     max_movement = rad_to_b24(quarterarcseconds_to_rad(fixed_rate_map(9) * (self.state_timestep/1e9)))
-                    self.state_azm += clamp(self.iface_cmd_goto_azm-self.state_azm, -max_movement, max_movement)
-                    self.state_alt += clamp(self.iface_cmd_goto_alt-self.state_alt, -max_movement, max_movement)
 
-                    # If we have completed the GOTO, note that.
-                    if self.state_azm == self.iface_cmd_goto_azm and self.state_alt == self.iface_cmd_goto_alt:
-                        self.iface_goto_in_progress = False
+                    if self.altaz_mode:
+                        # determine the azimuth and elevation of the desired RA and Dec, if necessary,
+                        if not self.iface_goto_azm_alt:
+                            dest_sky_coord = coords.SkyCoord(ra=b24_to_rad(self.iface_cmd_goto_ra) * units.rad,
+                                                             dec=b24_to_rad(self.iface_cmd_goto_dec) * units.rad)
+                            dest_alt_az = dest_sky_coord.transform_to(alt_az)
+                            self.iface_cmd_goto_azm = rad_to_b24(dest_alt_az.az.to(units.rad).value)
+                            self.iface_cmd_goto_alt = rad_to_b24(dest_alt_az.alt.to(units.rad).value)
+
+                        # and move to that position at the maximum possible speed.
+                        self.state_azm_or_ra += util.clamp(self.iface_cmd_goto_azm-self.state_azm_or_ra, -max_movement, max_movement)
+                        self.state_alt_or_dec += util.clamp(self.iface_cmd_goto_alt-self.state_alt_or_dec, -max_movement, max_movement)
+
+                        # If we have completed the GOTO, note that.
+                        if self.state_azm_or_ra == self.iface_cmd_goto_azm and self.state_alt_or_dec == self.iface_cmd_goto_alt:
+                            self.iface_goto_in_progress = False
+                    else:
+                        # determine the RA and Dec of the desired altitude and elevation, if necessary,
+                        if self.iface_goto_azm_alt:
+                            dest_alt_az = coords.AltAz(
+                                obstime=current_time,
+                                location=self.state_location,
+                                az=util.wrap_rad(b24_to_rad(self.iface_cmd_goto_azm), -math.pi) * units.rad,
+                                alt=util.clamp(util.wrap_rad(b24_to_rad(self.iface_cmd_goto_alt), -math.pi), -math.pi/2, math.pi/2) * units.rad)
+                            dest_sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+
+                            self.iface_cmd_goto_ra = rad_to_b24(dest_alt_az.az.to(units.rad).value)
+                            self.iface_cmd_goto_dec = rad_to_b24(dest_alt_az.alt.to(units.rad).value)
+
+                        # and move to that position at the maximum possible speed.
+                        self.state_azm_or_ra += util.clamp(self.iface_cmd_goto_ra-self.state_azm_or_ra, -max_movement, max_movement)
+                        self.state_alt_or_dec += util.clamp(self.iface_cmd_goto_dec-self.state_alt_or_dec, -max_movement, max_movement)
+
+                        # If we have completed the GOTO, note that.
+                        if self.state_azm_or_ra == self.iface_cmd_goto_ra and self.state_alt_or_dec == self.iface_cmd_goto_dec:
+                            self.iface_goto_in_progress = False
                 elif self.iface_tracking_mode != TrackingMode.OFF:
                     # If we're tracking,
                     assert self.iface_cmd_slew_rate_azm == 0
                     assert self.iface_cmd_slew_rate_alt == 0
 
-                    # note the current position of the telescope if we don't already have a tracked position saved,
-                    if self.tracked_sky_coord is None:
-                        self.tracked_sky_coord = sky_coord
+                    if self.altaz_mode:
+                        # note the current position of the telescope if we don't already have a tracked position saved,
+                        if self.tracked_sky_coord is None:
+                            self.tracked_sky_coord = sky_coord
 
-                    # and then just snap the telescope to that position. The motion should be small, so it's fine.
-                    tracked_alt_az = self.tracked_sky_coord.transform_to(alt_az)
-                    self.state_azm = rad_to_b24(tracked_alt_az.az.to(units.rad).value)
-                    self.state_alt = rad_to_b24(tracked_alt_az.alt.to(units.rad).value)
-                    next_tracked_sky_coord = self.tracked_sky_coord
+                        # and then just snap the telescope to that position. The motion should be small, so it's fine.
+                        tracked_alt_az = self.tracked_sky_coord.transform_to(alt_az)
+                        self.state_azm_or_ra = rad_to_b24(tracked_alt_az.az.to(units.rad).value)
+                        self.state_alt_or_dec = rad_to_b24(tracked_alt_az.alt.to(units.rad).value)
+                        next_tracked_sky_coord = self.tracked_sky_coord
+                    else:
+                        # On an equatorial wedge, the telescope is motionless relative to the sky when tracking.
+                        pass
                 else:
                     # If we're slewing, slew.
-                    self.state_azm += int(wrap_b24(rad_to_b24(quarterarcseconds_to_rad(self.iface_cmd_slew_rate_azm)), -2**23) * (self.state_timestep/1e9))
-                    self.state_alt += int(wrap_b24(rad_to_b24(quarterarcseconds_to_rad(self.iface_cmd_slew_rate_alt)), -2**23) * (self.state_timestep/1e9))
+
+                    if self.altaz_mode:
+                        siderial_rate_correction = 0.0
+                    else:
+                        # When the telescope is stopped, the right ascension naturally drifts at the sidereal rate.
+                        siderial_rate_correction = SIDERIAL_RATE_RADIANS_PER_SECOND
+
+                    self.state_azm_or_ra += int(wrap_b24(rad_to_b24(quarterarcseconds_to_rad(self.iface_cmd_slew_rate_azm) + siderial_rate_correction), -2**23) * (self.state_timestep/1e9))
+                    self.state_alt_or_dec += int(wrap_b24(rad_to_b24(quarterarcseconds_to_rad(self.iface_cmd_slew_rate_alt)), -2**23) * (self.state_timestep/1e9))
                 self.tracked_sky_coord = next_tracked_sky_coord
 
                 # Get an astropy.coordinates.AltAz and astropy.coordinates.SkyCoord
                 # corresponding to the telescope's current position.
-                alt_az = coords.AltAz(
-                    obstime=current_time,
-                    location=self.state_location,
-                    az=util.wrap_rad(b24_to_rad(self.state_azm), -math.pi) * units.rad,
-                    alt=clamp(util.wrap_rad(b24_to_rad(self.state_alt), -math.pi), -math.pi/2, math.pi/2) * units.rad)
-                sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+                if self.altaz_mode:
+                    alt_az = coords.AltAz(
+                        obstime=current_time,
+                        location=self.state_location,
+                        az=util.wrap_rad(b24_to_rad(self.state_azm_or_ra), -math.pi) * units.rad,
+                        alt=util.clamp(util.wrap_rad(b24_to_rad(self.state_alt_or_dec), -math.pi), -math.pi/2, math.pi/2) * units.rad)
+                    sky_coord = alt_az.transform_to(coords.SkyCoord(ra=0*units.rad, dec=0*units.rad))
+                else:
+                    sky_coord = coords.SkyCoord(ra=b24_to_rad(self.state_azm_or_ra)*units.rad, dec=b24_to_rad(self.state_alt_or_dec)*units.rad)
+                    alt_az = sky_coord.transform_to(coords.AltAz(obstime=current_time, location=self.state_location))
 
                 # Update the position measurements.
-                self.iface_meas_azm = self.state_azm
-                self.iface_meas_alt = self.state_alt
+                if self.altaz_mode:
+                    self.iface_meas_azm = self.state_azm_or_ra
+                    self.iface_meas_alt = self.state_alt_or_dec
 
-                self.iface_meas_ra  = rad_to_b24(sky_coord.ra.to(units.rad).value)
-                self.iface_meas_dec = rad_to_b24(sky_coord.dec.to(units.rad).value)
+                    self.iface_meas_ra  = rad_to_b24(sky_coord.ra.to(units.rad).value)
+                    self.iface_meas_dec = rad_to_b24(sky_coord.dec.to(units.rad).value)
+                else:
+                    self.iface_meas_azm = rad_to_b24(alt_az.az.to(units.rad).value)  
+                    self.iface_meas_alt = rad_to_b24(alt_az.alt.to(units.rad).value) 
+
+                    self.iface_meas_ra  = self.state_azm_or_ra  
+                    self.iface_meas_dec = self.state_alt_or_dec 
 
     @speak_delay
     def speak(self, command):
@@ -382,10 +435,14 @@ class NexStarSerialHootl(object):
 
             # Get AZM-ALT
             if command == 'Z':
+                if not self.altaz_mode:
+                    raise Exception('The real mount does not return accurate results for GET AZM-ALT when in EQ mode')
                 return '{},{}'.format(b24_to_hex4(self.iface_meas_azm), b24_to_hex4(self.iface_meas_alt))
 
             # Get precise AZM-ALT
             if command == 'z':
+                if not self.altaz_mode:
+                    raise Exception('The real mount does not return accurate results for GET AZM-ALT when in EQ mode')
                 return '{},{}'.format(b24_to_hex8(self.iface_meas_azm), b24_to_hex8(self.iface_meas_alt))
 
             # GOTO RA/DEC
@@ -438,50 +495,54 @@ class NexStarSerialHootl(object):
                 self.iface_tracking_mode = TrackingMode(ord(command[1]))
                 return ''
 
-            # Variable rate Azm (or RA) slew in positive direction
+            # Variable rate Azm slew in positive direction (or RA slew in negative direction)
             if match_passthrough(3, 16, 6, 2):
                 slew_rate_hi = ord(command[4])
                 slew_rate_lo = ord(command[5])
                 self.iface_cmd_slew_rate_azm = slew_rate_hi * 256 + slew_rate_lo
+                if not self.altaz_mode:
+                    self.iface_cmd_slew_rate_azm = -self.iface_cmd_slew_rate_azm
                 return ''
 
-            # Variable rate Azm (or RA) slew in negative direction
+            # Variable rate Azm slew in negative direction (or RA slew in positive direction)
             if match_passthrough(3, 16, 7, 2):
                 slew_rate_hi = ord(command[4])
                 slew_rate_lo = ord(command[5])
                 self.iface_cmd_slew_rate_azm = -1 * slew_rate_hi * 256 + slew_rate_lo
+                if not self.altaz_mode:
+                    self.iface_cmd_slew_rate_azm = -self.iface_cmd_slew_rate_azm
                 return ''
 
-            # Variable rate Alt (or RA) slew in positive direction
+            # Variable rate Alt (or Dec) slew in positive direction
             if match_passthrough(3, 17, 6, 2):
                 slew_rate_hi = ord(command[4])
                 slew_rate_lo = ord(command[5])
                 self.iface_cmd_slew_rate_alt = slew_rate_hi * 256 + slew_rate_lo
                 return ''
 
-            # Variable rate Alt (or RA) slew in negative direction
+            # Variable rate Alt (or Dec) slew in negative direction
             if match_passthrough(3, 17, 7, 2):
                 slew_rate_hi = ord(command[4])
                 slew_rate_lo = ord(command[5])
                 self.iface_cmd_slew_rate_alt = -1 * slew_rate_hi * 256 + slew_rate_lo
                 return ''
 
-            # Fixed rate Azm (or RA) slew in positive direction
+            # Fixed rate Azm slew in positive direction (or RA slew in negative direction)
             if match_passthrough(3, 16, 36, 1):
                 self.iface_cmd_slew_rate_azm = fixed_rate_map(ord(command[4]))
                 return ''
 
-            # Fixed rate Azm (or RA) slew in negative direction
+            # Fixed rate Azm slew in negative direction (or RA slew in positive direction)
             if match_passthrough(3, 16, 37, 1):
                 self.iface_cmd_slew_rate_azm = -1 * fixed_rate_map(ord(command[4]))
                 return ''
 
-            # Fixed rate Alt (or RA) slew in positive direction
+            # Fixed rate Alt (or Dec) slew in positive direction
             if match_passthrough(3, 17, 36, 1):
                 self.iface_cmd_slew_rate_alt = fixed_rate_map(ord(command[4]))
                 return ''
 
-            # Fixed rate Alt (or RA) slew in negative direction
+            # Fixed rate Alt (or Dec) slew in negative direction
             if match_passthrough(3, 17, 37, 1):
                 self.iface_cmd_slew_rate_alt = -1 * fixed_rate_map(ord(command[4]))
                 return ''
@@ -582,8 +643,12 @@ class NexStar(object):
         '''Set the current TrackingMode of the telescope.'''
         self._speak('T{}'.format(chr(mode.value)), 0)
 
-    def slew_azm(self, rate):
-        '''Set the azimuth slew rate of the telescope, in radians per second.'''
+    def slew_azm_or_ra(self, rate):
+        '''
+        Set the azimuth/RA slew rate of the telescope, in radians per second.
+
+        RA slew is backwards.
+        '''
         arg = rad_to_quarterarcseconds(min(abs(rate), 0.079121))
         arg = min(arg, 0xffff)
         arg_hi = chr(int(arg / 256))
@@ -591,8 +656,8 @@ class NexStar(object):
         dir_arg = chr(6) if rate >= 0 else chr(7)
         self._speak('P' + chr(3) + chr(16) + dir_arg + arg_hi + arg_lo + chr(0) + chr(0), 0)
 
-    def slew_alt(self, rate):
-        '''Set the elevation slew rate of the telescope, in radians per second.'''
+    def slew_alt_or_dec(self, rate):
+        '''Set the elevation/declination slew rate of the telescope, in radians per second.'''
         arg = rad_to_quarterarcseconds(min(abs(rate), 0.079121))
         arg = min(arg, 0xffff)
         arg_hi = chr(int(arg / 256))
@@ -600,10 +665,27 @@ class NexStar(object):
         dir_arg = chr(6) if rate >= 0 else chr(7)
         self._speak('P' + chr(3) + chr(17) + dir_arg + arg_hi + arg_lo + chr(0) + chr(0), 0)
 
-    def slew(self, azm_rate, alt_rate):
-        '''Convenience function for calling slew_azm() and slew_alt() one after the other.'''
+    def slew_azm(self, rate):
+        self.slew_azm_or_ra(rate)
+
+    def slew_alt(self, rate):
+        self.slew_alt_or_dec(rate)
+
+    def slew_ra(self, rate):
+        self.slew_azm_or_ra(-rate)
+
+    def slew_dec(self, rate):
+        self.slew_alt_or_dec(rate)
+
+    def slew_azmalt(self, azm_rate, alt_rate):
+        '''Set the Az/Alt slew rates.'''
         self.slew_azm(azm_rate)
         self.slew_alt(alt_rate)
+
+    def slew_radec(self, ra_rate, dec_rate):
+        '''Set the RA/Dec slew rates.'''
+        self.slew_ra(ra_rate)
+        self.slew_dec(dec_rate)
 
     def is_goto_in_progress(self):
         '''Return True if a GOTO is in progress.'''

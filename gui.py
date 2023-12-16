@@ -24,9 +24,12 @@ class Exit(Exception):
 
 class Gui(object):
     '''Runs the GUI and provides the interface between it and the main thread.'''
-    def __init__(self, black_and_white, white_bg, kp, ki, kd):
+    def __init__(self, black_and_white, white_bg, kp, ki, kd, draw_eq_frame, observatory_location):
         self.black_and_white = black_and_white
         self.white_bg = white_bg
+
+        self.draw_eq_frame = draw_eq_frame
+        self.observatory_location = observatory_location
 
         # Interface variables, shared between main and gui thread.
         self.iface_scope_azm_alt = (0.0, 0.0)  # Where is the telescope pointing? (azimuth, elevation). radians.
@@ -167,6 +170,7 @@ class Gui(object):
                 untracked_last_known_color = all_black
                 untracked_projected_color  = all_black
                 horizon_color              = all_black
+                eq_frame_color             = all_black
                 tracked_last_known_color   = all_black
                 tracked_projected_color    = all_black
                 moon_color                 = all_black
@@ -178,6 +182,7 @@ class Gui(object):
                 untracked_last_known_color = all_white
                 untracked_projected_color  = all_white
                 horizon_color              = all_white
+                eq_frame_color             = all_white
                 tracked_last_known_color   = all_white
                 tracked_projected_color    = all_white
                 moon_color                 = all_white
@@ -193,11 +198,15 @@ class Gui(object):
             untracked_last_known_color = (0.4, 0.4, 1.0) # Dark blue
             untracked_projected_color  = (0.6, 0.6, 1.0) # Light blue
             horizon_color              = (0.2, 0.6, 0.2) # Green
+            eq_frame_color             = (0.9, 0.3, 1.0) # Purple
             tracked_last_known_color   = (1.0, 0.4, 0.4) # Dark orange
             tracked_projected_color    = (1.0, 0.6, 0.6) # Light orange
 
         # Draw the horizon and axis labels.
         self._draw_horizon(horizon_color)
+
+        if self.draw_eq_frame:
+            self._draw_eq_frame(eq_frame_color)
 
         # Radius of the telescope field of view, in radians.
         # The present value is a bit high for my scope,
@@ -272,6 +281,34 @@ class Gui(object):
         for (alt, font_offset) in [(0,0), (30,7), (60,7), (90,10)]:
             x, y = self._azm_alt_to_x_y(math.pi, alt/180*math.pi)
             self._draw_text(x - 5, y - font_offset, str(alt))
+
+    def _draw_eq_frame(self, color):
+        '''Draw the equatorial frame.'''
+        current_time = util.get_current_time()
+
+        north_pole_alt, north_pole_azm = util.radec_to_altaz(0, math.pi/2, self.observatory_location, current_time)
+        south_pole_alt, south_pole_azm = util.radec_to_altaz(0, -math.pi/2, self.observatory_location, current_time)
+
+        pole_mark_radius = 3.0/180*math.pi
+
+        # Draw the north pole
+        self._draw_sky_circle(color, pole_mark_radius, north_pole_azm, north_pole_alt)
+
+        # Draw the south pole
+        self._draw_sky_circle(color, pole_mark_radius, south_pole_azm, south_pole_alt)
+
+        # Draw the celestial plane
+        self._draw_sky_circle(color, math.pi/2, north_pole_azm, north_pole_alt)
+
+        # Draw some dec lines
+        secondary_color = [x*0.2 for x in color]
+        for normal_ra in [0, math.pi/4, math.pi/2, -math.pi/4]:
+            dec_line_normal_alt, dec_line_normal_azm = util.radec_to_altaz(normal_ra, 0, self.observatory_location, current_time)
+            self._draw_sky_circle(secondary_color, math.pi/2, dec_line_normal_azm, dec_line_normal_alt)
+
+        # Draw some ra lines
+        for dec_radius in [math.pi/8, math.pi/4, 3*math.pi/8, 5*math.pi/8, 3*math.pi/4, 7*math.pi/8]:
+            self._draw_sky_circle(secondary_color, dec_radius, north_pole_azm, north_pole_alt)
 
     def _draw_marker(self, color, radius, azm, alt, label=''):
         '''Draw a marker on the screen.
