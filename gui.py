@@ -7,10 +7,15 @@ user wants can be called from the main thread. They just lock a mutex internally
 import copy
 import math
 import numpy
+import os
 import scipy.spatial
 import sys
 import threading
 import time
+
+from OpenGL import setPlatform
+if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+    setPlatform('glx')
 
 import OpenGL.GL as gl
 import OpenGL.GLU as glu
