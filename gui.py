@@ -165,42 +165,54 @@ class Gui(object):
             if self.white_bg:
                 all_black = (0.0, 0.0, 0.0)
 
-                sun_color                  = all_black
-                telescope_color            = all_black
-                untracked_last_known_color = all_black
-                untracked_projected_color  = all_black
-                horizon_color              = all_black
-                eq_frame_color             = all_black
-                tracked_last_known_color   = all_black
-                tracked_projected_color    = all_black
-                moon_color                 = all_black
+                sun_color                        = all_black
+                telescope_color                  = all_black
+                untracked_atmos_last_known_color = all_black
+                untracked_atmos_projected_color  = all_black
+                untracked_space_last_known_color = all_black
+                untracked_space_projected_color  = all_black
+                horizon_color                    = all_black
+                eq_frame_color                   = all_black
+                tracked_last_known_color         = all_black
+                tracked_projected_color          = all_black
+                moon_color                       = all_black
             else:
                 all_white = (1.0, 1.0, 1.0)
 
-                sun_color                  = all_white
-                telescope_color            = all_white
-                untracked_last_known_color = all_white
-                untracked_projected_color  = all_white
-                horizon_color              = all_white
-                eq_frame_color             = all_white
-                tracked_last_known_color   = all_white
-                tracked_projected_color    = all_white
-                moon_color                 = all_white
+                sun_color                        = all_white
+                telescope_color                  = all_white
+                untracked_atmos_last_known_color = all_white
+                untracked_atmos_projected_color  = all_white
+                untracked_space_last_known_color = all_white
+                untracked_space_projected_color  = all_white
+                horizon_color                    = all_white
+                eq_frame_color                   = all_white
+                tracked_last_known_color         = all_white
+                tracked_projected_color          = all_white
+                moon_color                       = all_white
         else:
             # Define some useful colors
             if self.white_bg:
                 sun_color  = (1.0, 0.5, 0.0) # Dark yellow
                 moon_color = (0.0, 0.0, 0.0) # Black
+
+                untracked_space_last_known_color = (0.0, 0.0, 0.0) # Black
+                untracked_space_projected_color  = (0.3, 0.3, 0.3) # Dark gray
+
             else:
                 sun_color  = (1.0, 1.0, 0.0) # Bright yellow
                 moon_color = (0.8, 0.8, 0.8) # Gray
-            telescope_color            = (1.0, 0.0, 0.0) # Red
-            untracked_last_known_color = (0.4, 0.4, 1.0) # Dark blue
-            untracked_projected_color  = (0.6, 0.6, 1.0) # Light blue
-            horizon_color              = (0.2, 0.6, 0.2) # Green
-            eq_frame_color             = (0.9, 0.3, 1.0) # Purple
-            tracked_last_known_color   = (1.0, 0.4, 0.4) # Dark orange
-            tracked_projected_color    = (1.0, 0.6, 0.6) # Light orange
+
+                untracked_space_last_known_color = (0.8, 0.8, 0.8) # Gray
+                untracked_space_projected_color  = (1.0, 1.0, 1.0) # White
+
+            telescope_color                  = (1.0, 0.0, 0.0) # Red
+            untracked_atmos_last_known_color = (0.4, 0.4, 1.0) # Dark blue
+            untracked_atmos_projected_color  = (0.6, 0.6, 1.0) # Light blue
+            horizon_color                    = (0.2, 0.6, 0.2) # Green
+            eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
+            tracked_last_known_color         = (1.0, 0.4, 0.4) # Dark orange
+            tracked_projected_color          = (1.0, 0.6, 0.6) # Light orange
 
         # Draw the horizon and axis labels.
         self._draw_horizon(horizon_color)
@@ -234,13 +246,17 @@ class Gui(object):
         for airplane in airplanes.values():
             # If this is the tracked airplane, draw it in one color scheme.
             # Draw untracked airplanes in a different color scheme.
+            # Untracked "airplanes" in space get yet another color scheme.
             with self.iface_lock:
                 if self.iface_tracked_plane == airplane.hex.value:
                     last_known_color = tracked_last_known_color
                     projected_color  = tracked_projected_color
+                elif airplane.in_space:
+                    last_known_color = untracked_space_last_known_color
+                    projected_color  = untracked_space_projected_color
                 else:
-                    last_known_color = untracked_last_known_color
-                    projected_color  = untracked_projected_color
+                    last_known_color = untracked_atmos_last_known_color
+                    projected_color  = untracked_atmos_projected_color
 
             # Draw a marker for this airplane.
             self._draw_marker(last_known_color, view_radius, airplane.az.value, airplane.el.value, airplane.callsign.value)

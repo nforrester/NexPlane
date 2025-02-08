@@ -38,6 +38,8 @@ import util
 # Airplane data is considered stale if it's older than 30 seconds.
 DROP_TIME_NS = 30e9
 
+METERS_PER_FOOT = 0.3048
+
 class TimestampedDatum(object):
     '''
     Records a data point about an airplane, and the time at which that data point
@@ -118,6 +120,7 @@ class Airplane(object):
         self.az       = TimestampedDatum() # radians
         self.el       = TimestampedDatum() # radians
         self.range    = TimestampedDatum() # meters
+        self.in_space = TimestampedDatum() # boolean, approximate
 
         # The timestamp of the latitude measurement (and in practice, the longitude measurement
         # because empirically these typically come together). It is useful to track this
@@ -134,10 +137,11 @@ class Airplane(object):
         '''Extrapolate this airplane's state into the future, and return a new Airplane object.'''
         new = Airplane()
 
-        # The hex code, callsign, and velocity are assumed to be constant.
+        # The hex code, callsign, in-space-ness, and velocity are assumed to be constant.
         new.hex      = self.hex
         new.callsign = self.callsign
         new.vel_ned  = self.vel_ned
+        new.in_space = self.in_space
 
         # Set the extrapolated latitude time.
         new.lat_time_ns = time_ns
@@ -395,6 +399,9 @@ def compute_airplane(observatory, raw_plane):
     plane.callsign = raw_plane.callsign
 
     plane.lat_time_ns = raw_plane.lat.max_time_ns
+
+    # The McDowell line is considered to be the edge of space.
+    plane.in_space = raw_plane.altitude.value * METERS_PER_FOOT > 80000
 
     # POSITION
 
