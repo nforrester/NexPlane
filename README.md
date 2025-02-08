@@ -41,6 +41,7 @@ directly by Wi-Fi.
 ## Requirements
 
 - Linux
+- Your Linux distro's GLUT package (on Ubuntu 12.10 that's `libglut-dev`, on Arch that's `freeglut`).
 - Python 3, and the Pip packages spelled out in `requirements.txt`
 - A Celestron NexStar series telescope.
 - If you want to look at airplanes: an ADS-B receiver and antenna.
