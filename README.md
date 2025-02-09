@@ -193,7 +193,7 @@ console.
 | t      | Increase integral gain by 0.01     |
 | g      | Decrease integral gain by 0.01     |
 | y      | Increase differential gain by 0.01 |
-| h      | Decrease differential gain by 0.01 |
+| u      | Decrease differential gain by 0.01 |
 
 Once you find a gain set you like, you can add it to `config.yaml`.
 

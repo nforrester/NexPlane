@@ -469,7 +469,7 @@ class Gui(object):
             elif key in [b'y', b'Y']:
                 self.iface_kd += 0.01
                 self.iface_gain_changes += 1
-            elif key in [b'h', b'H']:
+            elif key in [b'u', b'U']:
                 self.iface_kd -= 0.01
                 self.iface_gain_changes += 1
 
