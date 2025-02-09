@@ -11,7 +11,7 @@ The RPC server provides one important command: speak().
 It takes one argument, a line of text to send to the telescope.
 It returns (bool, string), whether the telescope sent a valid-looking response, and what the response was
 (minus the trailing '#' character for telescope_protocol='nexstar-hand-control',
-or minus the leading '=' and trailing '\\r' for telescope_protocol='az-eq6-eqdirect').
+or minus the leading '=' and trailing '\\r' for telescope_protocol='skywatcher-eqdirect').
 '''
 
 import ast
@@ -33,7 +33,7 @@ def process_response(response, telescope_protocol):
             return None
         return response[:-1]
     else:
-        assert telescope_protocol == 'az-eq6-eqdirect'
+        assert telescope_protocol == 'skywatcher-eqdirect'
         if len(response) == 0:
             return None
         if response[0] != '=':
