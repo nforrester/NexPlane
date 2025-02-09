@@ -287,7 +287,7 @@ when you start it up.
 
     $ ./nexplane.py --landmark washington_monument
 
-The offset between the known azimuth and elevation to that landmark and the reported asimuth
+The offset between the known azimuth and elevation to that landmark and the reported azimuth
 and elevation from the telescope will be recorded and compensated for. This is similar to
 performing a One-Star Align.
 
