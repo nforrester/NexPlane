@@ -155,21 +155,30 @@ def main():
             last_gain_changes = 0
 
             if args.landmark:
-                if args.mount_mode == 'eq':
-                    raise Exception('--landmark is not supported with --mount-mode=eq')
-
                 # The telescope begins pointed at a known landmark.
-                # Record the location of this landmark in the telescope's azimuth/elevation coordinate space.
+                # Record the location of this landmark in the telescope's coordinate space.
                 landmark = util.configured_earth_location(config_data, args.landmark)
                 landmark_aer = util.ned_to_aer(util.ned_between_earth_locations(landmark, observatory_location))
-                init_scope_azm, init_scope_alt = telescope.get_precise_azm_alt()
                 init_real_azm, init_real_alt, _ = landmark_aer
-                azm_cal = util.wrap_rad(init_real_azm - init_scope_azm, 0)
-                alt_cal = util.wrap_rad(init_real_alt - init_scope_alt, 0)
+                if args.mount_mode == 'altaz':
+                    init_scope_azm, init_scope_alt = telescope.get_precise_azm_alt()
+                    azm_cal = util.wrap_rad(init_real_azm - init_scope_azm, 0)
+                    alt_cal = util.wrap_rad(init_real_alt - init_scope_alt, 0)
+                else:
+                    assert args.mount_mode == 'eq'
+                    init_real_ra, init_real_dec = util.altaz_to_radec(init_real_alt, init_real_azm, observatory_location, util.get_current_time())
+                    init_scope_ra, init_scope_dec = telescope.get_precise_ra_dec()
+                    ra_cal = util.wrap_rad(init_real_ra - init_scope_ra, 0)
+                    dec_cal = util.wrap_rad(init_real_dec - init_scope_dec, 0)
             else:
                 # We'll trust that the telescope has been aligned using one of the built in methods.
-                azm_cal = 0.0
-                alt_cal = 0.0
+                if args.mount_mode == 'altaz':
+                    azm_cal = 0.0
+                    alt_cal = 0.0
+                else:
+                    assert args.mount_mode == 'eq'
+                    ra_cal = 0.0
+                    dec_cal = 0.0
 
             # Main loop
             while True:
@@ -184,8 +193,8 @@ def main():
                     scope_azm_alt = (util.wrap_rad(scope_azm_raw + azm_cal, 0), util.wrap_rad(scope_alt_raw + alt_cal, 0))
                 else:
                     scope_ra_raw, scope_dec_raw = telescope.get_precise_ra_dec()
-                    scope_ra = util.wrap_rad(scope_ra_raw, -math.pi)
-                    scope_dec = util.wrap_rad(scope_dec_raw, -math.pi)
+                    scope_ra = util.wrap_rad(scope_ra_raw + ra_cal, -math.pi)
+                    scope_dec = util.wrap_rad(scope_dec_raw + dec_cal, -math.pi)
                     scope_alt, scope_azm = util.radec_to_altaz(scope_ra, scope_dec, observatory_location, util.get_current_time())
                     scope_azm_alt = (scope_azm, scope_alt)
 
@@ -226,7 +235,7 @@ def main():
                             tracked_plane.az.value + az_offset,
                             observatory_location,
                             util.get_current_time())
-                        target_tracker.go(tracked_plane_ra, tracked_plane_dec)
+                        target_tracker.go(tracked_plane_ra - ra_cal, tracked_plane_dec - dec_cal)
                 else:
                     # If no data is available for the target, stop tracking and inform the GUI of that fact.
                     target_tracker.stop()
