@@ -6,15 +6,11 @@ The main class here is NexStar, which contains all the business logic for encodi
 requests to the telescope and decoding responses, and presents a nice interface to
 the rest of the program. When you construct a NexStar object you must pass an
 object that can take those commands and actually talk to the telescope. This is
-useful because there are a few different useful ways you might talk to the
+useful because there are two different useful ways you might talk to the
 telescope:
 
-    NexStarSerial
-        The telescope is directly connected to this computer.
-        Just open the serial port and talk to it.
-
-    NexStarSerialNetClient
-        The telescope is connected to a different computer.
+    SerialNetClient
+        The telescope is connected to a computer (possibly a different one).
         Talk to it via an RPC server running on that computer.
         See telescope_server.py.
 
@@ -135,40 +131,7 @@ def speak_delay(speak_fun):
         return response
     return delayed_speak
 
-class NexStarSerial(object):
-    '''
-    The telescope is directly connected to this computer.
-    Just open the serial port and talk to it.
-
-    Assumes that the telescope is connected to /dev/ttyUSB0.
-    '''
-    def __init__(self):
-        self.serial_port = serial.Serial(port='/dev/ttyUSB0', baudrate=BAUD_RATE, timeout=3.5)
-        self.closed = False
-
-    def speak(self, command):
-        '''Send the telescope a command, and return its response (without the trailing '#').'''
-        assert not self.closed
-
-        self.serial_port.write(command.encode(encoding='ISO-8859-1'))
-
-        response = self.serial_port.read_until('#').decode(encoding='ISO-8859-1')
-        if len(response) == 0 or response[-1] != '#':
-            raise NexStarError(repr(response))
-        response = response[:-1]
-
-        return response
-
-    def close(self):
-        '''Close the serial port.'''
-        if not self.closed:
-            self.serial_port.close()
-            self.closed = True
-
-    def __del__(self):
-        self.close()
-
-class NexStarSerialNetClient(object):
+class SerialNetClient(object):
     '''
     The telescope is connected to a different computer.
     Talk to it via an RPC server running on that computer.
@@ -564,15 +527,15 @@ class NexStarSerialHootl(object):
             raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
 class NexStar(object):
-    '''The main interface for speaking to the telescope.
+    '''The main interface for speaking to a NexStar telescope.
 
     Call member functions to send commands with arguments in sensible units,
     and they will return replies in sensible units.'''
     def __init__(self, serial_port):
         '''
         The argument is an object that provides a speak() function for talking to the
-        telescope in the NexStar serial communication protocol. Can be any of
-        NexStarSerial, NexStarSerialNetClient, or NexStarSerialHootl.
+        telescope in the NexStar serial communication protocol. Can be either of
+        SerialNetClient or NexStarSerialHootl.
         '''
         self.serial_port = serial_port
 

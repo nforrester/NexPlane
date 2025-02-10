@@ -56,16 +56,19 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
 
     if telescope_protocol == 'nexstar-hand-control':
         baud_rate = 9600
+        line_ending = ''
     elif telescope_protocol == 'skywatcher-mount-head-eqmod':
         baud_rate = 9600
+        line_ending = '\r'
     else:
-        assert telescope_protocol == 'skywatcher-mount-head-usb':
+        assert telescope_protocol == 'skywatcher-mount-head-usb'
         baud_rate = 115200
+        line_ending = '\r'
 
     telescope = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
 
     def speak(line):
-        telescope.write(line.encode(encoding='ISO-8859-1'))
+        telescope.write((line + line_ending).encode(encoding='ISO-8859-1'))
 
         response = read_response(telescope, telescope_protocol)
         processed = process_response(response, telescope_protocol)

@@ -16,6 +16,7 @@ import config
 import gui
 import nexstar
 import rpc
+import skywatcher
 import sbs1
 import tracker
 import util
@@ -82,6 +83,10 @@ def parse_args_and_config():
     )
 
     parser.add_argument(
+        '--telescope-protocol', type=str, default=config_data['telescope_protocol'],
+        help='Which protocol to use to talk to the telescope (default: {})'.format(config_data['telescope_protocol']))
+
+    parser.add_argument(
         '--sbs1', type=str, action='append', default=[],
         help='The host:port of an SBS1 server for airplane data. You can '
              'specify this argument multiple times in order to receive data '
@@ -117,7 +122,7 @@ def main():
                                                   observatory_location=observatory_location,
                                                   altaz_mode=(args.mount_mode == 'altaz'))
     else:
-        serial_iface = nexstar.NexStarSerialNetClient(args.telescope)
+        serial_iface = nexstar.SerialNetClient(args.telescope)
 
     # Receive airplane data.
     sbs1_receiver = sbs1.Sbs1Receiver(args.sbs1, observatory_location)
@@ -133,7 +138,11 @@ def main():
     while True:
         try:
             # Telescope control interface.
-            telescope = nexstar.NexStar(serial_iface)
+            if args.telescope_protocol == 'nexstar-hand-control':
+                telescope = nexstar.NexStar(serial_iface)
+            else:
+                assert telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
+                telescope = skywatcher.SkyWatcher(serial_iface)
 
             # Tracking controller, sends commands to the telescope.
             target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
