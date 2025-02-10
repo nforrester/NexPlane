@@ -11,7 +11,7 @@ The RPC server provides one important command: speak().
 It takes one argument, a line of text to send to the telescope.
 It returns (bool, string), whether the telescope sent a valid-looking response, and what the response was
 (minus the trailing '#' character for telescope_protocol='nexstar-hand-control',
-or minus the leading '=' and trailing '\\r' for telescope_protocol='skywatcher-eqdirect').
+or minus the leading '=' and trailing '\\r' for telescope_protocol='skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod').
 '''
 
 import ast
@@ -23,8 +23,6 @@ import time
 import config
 import rpc
 
-BAUD_RATE = 9600
-
 def process_response(response, telescope_protocol):
     if telescope_protocol == 'nexstar-hand-control':
         if len(response) == 0:
@@ -33,7 +31,7 @@ def process_response(response, telescope_protocol):
             return None
         return response[:-1]
     else:
-        assert telescope_protocol == 'skywatcher-eqdirect'
+        assert telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
         if len(response) == 0:
             return None
         if response[0] != '=':
@@ -52,10 +50,19 @@ def read_response(telescope, telescope_protocol):
 def hello():
     return 'hello'
 
-def nexstar_serial_udp_server(serial_port, net_port, telescope_protocol):
+def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
     print('Opening', serial_port)
     sys.stdout.flush()
-    telescope = serial.Serial(port=serial_port, baudrate=BAUD_RATE, timeout=0)
+
+    if telescope_protocol == 'nexstar-hand-control':
+        baud_rate = 9600
+    elif telescope_protocol == 'skywatcher-mount-head-eqmod':
+        baud_rate = 9600
+    else:
+        assert telescope_protocol == 'skywatcher-mount-head-usb':
+        baud_rate = 115200
+
+    telescope = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
 
     def speak(line):
         telescope.write(line.encode(encoding='ISO-8859-1'))
@@ -79,7 +86,7 @@ def nexstar_serial_udp_server(serial_port, net_port, telescope_protocol):
 def parse_args_and_config():
     '''Parse the configuration data and command line arguments consumed by this script.'''
     parser, config_data = config.get_arg_parser_and_config_data(
-        description='Exposes the NexStar serial interface on the network.')
+        description='Exposes the telescope serial interface on the network.')
 
     parser.add_argument(
         '--serial-port', default=config_data['serial_port'],
@@ -112,7 +119,7 @@ def main():
             print('Unable to find serial port for telescope.')
             sys.stdout.flush()
             sys.exit(1)
-    nexstar_serial_udp_server(serial_port, args.network_port, args.telescope_protocol)
+    telescope_serial_udp_server(serial_port, args.network_port, args.telescope_protocol)
 
 if __name__ == '__main__':
     main()
