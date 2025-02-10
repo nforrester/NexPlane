@@ -367,7 +367,7 @@ class SkyWatcher(object):
 
     def get_precise_ra_dec(self):
         # TODO DOC ME
-        ra = self._inquire_position(1)
+        ra = -self._inquire_position(1)
         dec = self._inquire_position(2)
         return ra, dec
 
