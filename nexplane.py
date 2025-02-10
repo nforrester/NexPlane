@@ -116,11 +116,15 @@ def main():
 
     # Set up a serial interface to the telescope, either a HOOTL one or a real one.
     if args.run_hootl:
-        current_time = util.get_current_time()
+        if args.telescope_protocol == 'nexstar-hand-control':
+            current_time = util.get_current_time()
 
-        serial_iface = nexstar.NexStarSerialHootl(current_time=current_time,
-                                                  observatory_location=observatory_location,
-                                                  altaz_mode=(args.mount_mode == 'altaz'))
+            serial_iface = nexstar.NexStarSerialHootl(current_time=current_time,
+                                                      observatory_location=observatory_location,
+                                                      altaz_mode=(args.mount_mode == 'altaz'))
+        else:
+            assert args.telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
+            serial_iface = skywatcher.SkyWatcherSerialHootl()
     else:
         serial_iface = nexstar.SerialNetClient(args.telescope)
 
@@ -141,7 +145,7 @@ def main():
             if args.telescope_protocol == 'nexstar-hand-control':
                 telescope = nexstar.NexStar(serial_iface)
             else:
-                assert telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
+                assert args.telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
                 telescope = skywatcher.SkyWatcher(serial_iface)
 
             # Tracking controller, sends commands to the telescope.

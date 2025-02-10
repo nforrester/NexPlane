@@ -123,7 +123,7 @@ class NexStarError(Exception):
 BAUD_RATE = 9600
 
 def speak_delay(speak_fun):
-    '''Decorator used by NexStarSerialHootl to simulate communication delays with the telescope.'''
+    '''Decorator used by HOOTL to simulate communication delays with the telescope.'''
     def delayed_speak(self, command):
         time.sleep(0.04)
         response = speak_fun(self, command)

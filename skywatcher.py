@@ -1,13 +1,247 @@
 # TODO DOC ME
 
+import copy
 import math
+import threading
+import time
 from dataclasses import dataclass
 
-from nexstar import SerialNetClient
+from nexstar import SerialNetClient, speak_delay
+
+@dataclass
+class AxisStatus:
+    # TODO DOC ME
+    tracking: bool
+    ccw: bool
+    fast: bool
+    running: bool
+    blocked: bool
+    init_done: bool
+    level_switch_on: bool
 
 class SkyWatcherError(Exception):
     '''Raised when the telescope does not respond, or gives an unexpected response.'''
     pass
+
+class SkyWatcherSerialHootl(object):
+    # TODO DOC ME
+    def __init__(self):
+        # Configuration
+        self.cpr = 9216000
+        self.hsr = 1
+        self.timer_freq = 16000000
+        self.accel = 5.0 / 360 * self.cpr # Counts per second per second
+        self.max_rate = 5.0 / 360 * self.cpr # Counts per second
+
+        # Simulator state variables
+        self.pos = [None]
+        self.pos.append(0x800000) # Counts
+        self.pos.append(0x800000)
+
+        self.rate = [None]
+        self.rate.append(0.0) # Counts per second
+        self.rate.append(0.0)
+
+        self.cmd_rate = [None]
+        self.cmd_rate.append(0.0) # Counts per second
+        self.cmd_rate.append(0.0)
+
+        self.wish_rate = [None]
+        self.wish_rate.append(0.0) # Counts per second
+        self.wish_rate.append(0.0)
+
+        self.axis_status = [None]
+        for _ in ['ra', 'dec']:
+            self.axis_status.append(AxisStatus(
+                tracking=False,
+                ccw=False,
+                fast=False,
+                running=False,
+                blocked=False,
+                init_done=False,
+                level_switch_on=False,
+            ))
+
+        self.time = 0 # Integer nanoseconds
+        self.timestep = int(0.02 * 1e9) # Integer nanoseconds to advance per simulation step.
+
+        # Mutex to lock the state variables.
+        self.lock = threading.Lock()
+
+        # Start the simulator thread.
+        def run_thread():
+            self._run_simulator()
+        self.stop_thread = False
+        self.thread = threading.Thread(target=run_thread)
+        self.thread.start()
+
+    def close(self):
+        '''Stop the simulator and join the simulator thread.'''
+        self.stop_thread = True
+        self.thread.join()
+
+    def __del__(self):
+        self.close()
+
+    def _run_simulator(self):
+        '''Simulator thread.'''
+        wall_time = int(time.time()*1e9)
+        while not self.stop_thread:
+            # Sleep until the top of the next cycle.
+            wall_time += self.timestep
+            sleep_time = wall_time - int(time.time()*1e9)
+            if sleep_time > 0:
+                time.sleep(sleep_time/1e9)
+
+            with self.lock:
+                # Advance time
+                self.time += self.timestep
+
+                for axis in [1, 2]:
+                    self.pos[axis] += int(self.timestep / 1e9 * self.rate[axis])
+
+                    while self.pos[axis] < 0:
+                        self.pos[axis] += 0x1000000
+                    while self.pos[axis] > 0xffffff:
+                        self.pos[axis] -= 0x1000000
+
+                    rate_delta = self.cmd_rate[axis] - self.rate[axis]
+                    max_rate_delta = self.accel * self.timestep / 1e9
+                    if rate_delta > max_rate_delta:
+                        rate_delta = max_rate_delta
+                        self.rate[axis] += rate_delta
+                    elif rate_delta < -max_rate_delta:
+                        rate_delta = -max_rate_delta
+                        self.rate[axis] += rate_delta
+                    else:
+                        self.rate[axis] = self.cmd_rate[axis]
+
+                    running = self.rate[axis] != 0
+                    self.axis_status[axis].tracking = running
+                    self.axis_status[axis].running = running
+
+    @speak_delay
+    def speak(self, command):
+        '''Decode and execute a command, then encode and return a response.'''
+        # If the simulator thread died, just give up.
+        if not self.thread.is_alive():
+            sys.exit(1)
+
+        assert len(command) > 0
+        assert command[0] == ':'
+
+        with self.lock:
+            # Inquire Counts Per Revolution
+            if command[1] == 'a':
+                assert len(command) == 3
+                assert command[2] in '12'
+                return encode_int_6(self.cpr)
+
+            # Inquire High Speed Ratio
+            if command[1] == 'g':
+                assert len(command) == 3
+                assert command[2] in '12'
+                return encode_int_2(self.hsr)
+
+            # Inquire High Speed Ratio
+            if command[1] == 'b':
+                assert len(command) == 3
+                assert command[2] == '1'
+                return encode_int_6(self.timer_freq)
+
+            # Initialization Done
+            if command[1] == 'F':
+                assert len(command) == 3
+                assert command[2] in '12'
+                axis = int(command[2])
+                self.axis_status[axis].init_done = True
+                return ''
+
+            # Inquire Status
+            if command[1] == 'f':
+                assert len(command) == 3
+                assert command[2] in '12'
+                axis = int(command[2])
+                status = self.axis_status[axis]
+                value = 0
+                if status.tracking:
+                    value = value | 0x100
+                if status.ccw:
+                    value = value | 0x200
+                if status.fast:
+                    value = value | 0x400
+                if status.running:
+                    value = value | 0x010
+                if status.blocked:
+                    value = value | 0x020
+                if status.init_done:
+                    value = value | 0x001
+                if status.level_switch_on:
+                    value = value | 0x002
+                return format(value, '03X')
+
+            # Stop Motion
+            if command[1] == 'K':
+                assert len(command) == 3
+                assert command[2] in '12'
+                axis = int(command[2])
+                self.cmd_rate[axis] = 0.0
+                return ''
+
+            # Inquire Position
+            if command[1] == 'j':
+                assert len(command) == 3
+                assert command[2] in '12'
+                axis = int(command[2])
+                return encode_int_6(self.pos[axis])
+
+            # Set Motion Mode
+            if command[1] == 'G':
+                assert len(command) == 5
+                assert command[2] in '12'
+                axis = int(command[2])
+                if self.axis_status[axis].running:
+                    raise Exception('Illegal to set motion mode while axis in motion.')
+                value = decode_int_2(command[3:5])
+                if value & 0x10 == 0:
+                    raise Exception('GOTO not implemented')
+                if value & 0x20 == 0:
+                    raise Exception('Slow not implemented')
+                if value & 0x40 == 1:
+                    raise Exception('Medium not implemented')
+                if value & 0x80 == 1:
+                    raise Exception('GOTO not implemented')
+                if value & 0x02 == 1:
+                    raise Exception('South not implemented')
+                self.axis_status[axis].ccw = 0 != (value & 0x01)
+                self.axis_status[axis].fast = 0 != (value & 0x20)
+                return ''
+
+            # Set Step Period
+            if command[1] == 'I':
+                assert len(command) == 9
+                assert command[2] in '12'
+                axis = int(command[2])
+                value = decode_int_6(command[3:9])
+                rate = self.hsr * self.timer_freq / value
+                if rate > self.max_rate:
+                    rate = self.max_rate
+                if self.axis_status[axis].ccw:
+                    rate *= -1
+                self.wish_rate[axis] = rate
+                if self.cmd_rate[axis] != 0:
+                    self.cmd_rate[axis] = rate
+                return ''
+
+            # Start Motion
+            if command[1] == 'J':
+                assert len(command) == 3
+                assert command[2] in '12'
+                axis = int(command[2])
+                self.cmd_rate[axis] = self.wish_rate[axis]
+                return ''
+
+        raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
 def encode_int_2(v):
     # TODO DOC ME
@@ -43,17 +277,6 @@ def decode_int_6(s):
     assert len(s) == 6, s
     h = s[4:6] + s[2:4] + s[0:2]
     return int(h, 16)
-
-@dataclass
-class AxisStatus:
-    # TODO DOC ME
-    tracking: bool
-    ccw: bool
-    fast: bool
-    running: bool
-    blocked: bool
-    init_done: bool
-    level_switch_on: bool
 
 class SkyWatcher(object):
     '''The main interface for speaking to a SkyWatcher telescope.
