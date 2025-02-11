@@ -13,6 +13,14 @@ unattended.
 
 NexPlane comes with **absolutely no warranty**, and use of NexPlane is entirely **at your own risk**.
 
+# EXPERIMENTAL BRANCH WARNING
+
+This is an experimental branch of the software. It has not been well tested. The purpose of
+publishing this branch is to transport the software to computers where it can be tested.
+I think there are probably bugs! You should use the master branch instead.
+
+Don't get too excited just yet, Nick! If it works, I'll let you know.
+
 # NexPlane
 
 NexPlane can help you drive a Celestron NexStar telescope mount to track airplanes and satellites.
