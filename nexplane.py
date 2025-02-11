@@ -155,11 +155,36 @@ def main():
             last_gain_changes = 0
 
             if args.landmark:
-                # The telescope begins pointed at a known landmark.
-                # Record the location of this landmark in the telescope's coordinate space.
-                landmark = util.configured_earth_location(config_data, args.landmark)
-                landmark_aer = util.ned_to_aer(util.ned_between_earth_locations(landmark, observatory_location))
-                init_real_azm, init_real_alt, _ = landmark_aer
+                sky_prefix = 'sky:'
+                if args.landmark.startswith(sky_prefix):
+                    # The telescope begins pointed at a known celestial object.
+                    # Record the location of this object in the telescope's coordinate space.
+                    object_name = args.landmark[len(sky_prefix):]
+                    solar_system_bodies = [
+                        'sun',
+                        'mercury',
+                        'venus',
+                        'moon',
+                        'mars',
+                        'jupiter',
+                        'saturn',
+                        'uranus',
+                        'neptune',
+                    ]
+                    if object_name in solar_system_bodies:
+                        object_skycoord = coords.get_body(object_name, util.get_current_time(), location=observatory_location)
+                    else:
+                        object_skycoord = coords.SkyCoord.from_name(object_name)
+                    object_altaz = object_skycoord.transform_to(coords.AltAz(obstime=util.get_current_time(), location=observatory_location))
+                    init_real_azm = object_altaz.az.to(units.rad).value
+                    init_real_alt = object_altaz.alt.to(units.rad).value
+                else:
+                    # The telescope begins pointed at a known landmark.
+                    # Record the location of this landmark in the telescope's coordinate space.
+                    landmark = util.configured_earth_location(config_data, args.landmark)
+                    landmark_aer = util.ned_to_aer(util.ned_between_earth_locations(landmark, observatory_location))
+                    init_real_azm, init_real_alt, _ = landmark_aer
+
                 if args.mount_mode == 'altaz':
                     init_scope_azm, init_scope_alt = telescope.get_precise_azm_alt()
                     azm_cal = util.wrap_rad(init_real_azm - init_scope_azm, 0)
