@@ -31,7 +31,7 @@ def process_response(response, telescope_protocol):
             return None
         return response[:-1]
     else:
-        assert telescope_protocol in ['skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod']
+        assert telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod']
         if len(response) == 0:
             return None
         if response[0] != '=':
