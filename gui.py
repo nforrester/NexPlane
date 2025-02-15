@@ -70,8 +70,16 @@ class Gui(object):
     def __del__(self):
         self.close()
 
-    def provide_update(self, scope_azm_alt, sun_azm_alt, moon_azm_alt, airplanes):
-        '''Call from the main thread to feed new data to the GUI so it can be displayed. See comments in __init__() for parameter definitions.'''
+    def provide_update(
+        self,
+        scope_azm_alt,
+        sun_azm_alt,
+        moon_azm_alt,
+        airplanes):
+        '''
+        Call from the main thread to feed new data to the GUI so it can be displayed.
+        See comments in __init__() for parameter definitions.
+        '''
         if not self.thread.is_alive():
             raise Exit
         copied_airplanes = copy.deepcopy(airplanes)
