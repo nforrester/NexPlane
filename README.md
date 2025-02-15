@@ -39,7 +39,7 @@ Notes from a field test with a Sky-Watcher AZ-EQ6:
 Quick summary of new features:
 
 - Support is added for the Sky-Watcher AZ-EQ6 mount. Other similar Sky-Watcher mounts like
-  the EQ6-R are likely to work too.
+  the EQ6-R and AZ-GTi are likely to work too.
 - There's a new command line option called `--telescope-protocol`, and a corresponding
   config parameter called `telescope_protocol` which sets its defult value. This option can
   take on the following values:
