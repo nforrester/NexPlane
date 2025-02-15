@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from nexstar import SerialNetClient, speak_delay
+from nexstar import SerialNetClient, CommError, speak_delay
 
 @dataclass
 class AxisStatus:
@@ -18,10 +18,6 @@ class AxisStatus:
     blocked: bool
     init_done: bool
     level_switch_on: bool
-
-class SkyWatcherError(Exception):
-    '''Raised when the telescope does not respond, or gives an unexpected response.'''
-    pass
 
 class SkyWatcherSerialHootl(object):
     # TODO DOC ME
@@ -322,7 +318,7 @@ class SkyWatcher(object):
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
         response = self.serial_port.speak(command)
         if len(response) != response_len:
-            raise SkyWatcherError(repr(response))
+            raise CommError(repr(response))
         return response
 
     def _initialization_done(self, axis):

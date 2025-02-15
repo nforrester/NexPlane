@@ -116,7 +116,7 @@ def fixed_rate_map(fixed_rate):
         return 5 * degree_per_second
     raise Exception(f'Bad fixed rate: {fixed_rate}')
 
-class NexStarError(Exception):
+class CommError(Exception):
     '''Raised when the telescope does not respond, or gives an unexpected response.'''
     pass
 
@@ -151,7 +151,7 @@ class SerialNetClient(object):
         success, value = self.client.call('speak', command)
 
         if not success:
-            raise NexStarError(repr(value))
+            raise CommError(repr(value))
         return value
 
     def close(self):
@@ -543,7 +543,7 @@ class NexStar(object):
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
         response = self.serial_port.speak(command)
         if len(response) != response_len:
-            raise NexStarError(repr(response))
+            raise CommError(repr(response))
         return response
 
     def get_ra_dec(self):
