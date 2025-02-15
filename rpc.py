@@ -182,6 +182,8 @@ class RpcServer(object):
                 try:
                     value = self.funs[fun](*args, **kwargs)
                     exception = None
+                except KeyboardInterrupt:
+                    raise
                 except:
                     value = None
                     exception = traceback.format_exc()
