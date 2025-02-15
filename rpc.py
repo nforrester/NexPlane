@@ -94,9 +94,18 @@ class RpcClient(object):
         self.client_id = random.randint(0, 100000000000000)
 
     def call(self, fun, *args, **kwargs):
-        '''Call a function on the server. If it returns a value, return it. If it raises an exception, raise an RpcRemoteException.'''
+        '''
+        Call a function on the server. If it returns a value, return it.
+        If it raises an exception, raise an RpcRemoteException.
+        '''
         # Encode the message to the server.
-        message = repr((self.client_id, self.counter, self.response_tracker.lowest_still_tracked(), fun, args, kwargs)).encode()
+        message = repr((
+            self.client_id,
+            self.counter,
+            self.response_tracker.lowest_still_tracked(),
+            fun,
+            args,
+            kwargs)).encode()
 
         overall_timeout = 5.0 # How long to wait before giving up.
         salvo_timeout = 0.1   # How long to wait before retransmitting.
