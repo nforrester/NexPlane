@@ -274,6 +274,10 @@ def main():
                     # If we got to the end of the loop, communication is ok.
                     warn_comm_failure = False
 
+                except nexstar.CommError:
+                    print(traceback.format_exc())
+                    print('Attempting to continue...')
+                    warn_comm_failure = True
                 except rpc.RpcConnectionFailure:
                     print(traceback.format_exc())
                     print('Attempting to continue...')
