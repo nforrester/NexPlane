@@ -18,6 +18,7 @@ import ast
 import os
 import serial
 import sys
+import termios
 import time
 
 import config
@@ -50,6 +51,10 @@ def read_response(telescope, telescope_protocol):
 def hello():
     return 'hello'
 
+class Box:
+    def __init__(self, x):
+        self.x = x
+
 def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
     print('Opening', serial_port)
     sys.stdout.flush()
@@ -65,18 +70,34 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
         baud_rate = 115200
         line_ending = '\r'
 
-    telescope = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
+    telescope = Box(None)
+    def init_port():
+        telescope.x = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
+    init_port()
+    def reinit_port():
+        telescope.x.close()
+        init_port()
 
     def speak(line):
-        telescope.reset_input_buffer()
-        telescope.write((line + line_ending).encode(encoding='ISO-8859-1'))
+        try:
+            telescope.x.reset_input_buffer()
+            telescope.x.write((line + line_ending).encode(encoding='ISO-8859-1'))
 
-        response = read_response(telescope, telescope_protocol)
-        processed = process_response(response, telescope_protocol)
-        if processed is None:
-            return (False, response)
-        else:
-            return (True, processed)
+            response = read_response(telescope.x, telescope_protocol)
+            processed = process_response(response, telescope_protocol)
+            if processed is None:
+                return (False, response)
+            else:
+                return (True, processed)
+        except serial.serialutil.PortNotOpenError:
+            reinit_port()
+            raise
+        except serial.serialutil.SerialException:
+            reinit_port()
+            raise
+        except termios.error:
+            reinit_port()
+            raise
 
     print('Starting RPC server...')
     sys.stdout.flush()

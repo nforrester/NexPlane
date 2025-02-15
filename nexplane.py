@@ -278,6 +278,10 @@ def main():
                     print(traceback.format_exc())
                     print('Attempting to continue...')
                     warn_comm_failure = True
+                except rpc.RpcRemoteException:
+                    print(traceback.format_exc())
+                    print('Attempting to continue...')
+                    warn_comm_failure = True
         except gui.Exit:
             pass
         finally:
