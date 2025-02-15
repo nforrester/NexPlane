@@ -68,6 +68,7 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
     telescope = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
 
     def speak(line):
+        telescope.reset_input_buffer()
         telescope.write((line + line_ending).encode(encoding='ISO-8859-1'))
 
         response = read_response(telescope, telescope_protocol)
