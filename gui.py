@@ -27,7 +27,7 @@ class Exit(Exception):
     '''Thrown in the main thread when the GUI thread stops, probably because somebody closed the window.'''
     pass
 
-class Gui(object):
+class Gui:
     '''Runs the GUI and provides the interface between it and the main thread.'''
     def __init__(self, black_and_white, white_bg, kp, ki, kd, draw_eq_frame, observatory_location):
         self.black_and_white = black_and_white

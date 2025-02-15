@@ -40,7 +40,7 @@ DROP_TIME_NS = 30e9
 
 METERS_PER_FOOT = 0.3048
 
-class TimestampedDatum(object):
+class TimestampedDatum:
     '''
     Records a data point about an airplane, and the time at which that data point
     was received. If this data point is calculated from several others, then it
@@ -67,7 +67,7 @@ class TimestampedDatum(object):
     def __str__(self):
         return str(self.value)
 
-class RawAirplane(object):
+class RawAirplane:
     '''
     Records raw data about an airplane as received over the network,
     and provides a function to determine whether the data set is complete.
@@ -101,7 +101,7 @@ class RawAirplane(object):
                self.lon.value         is not None and \
                self.vrate.value       is not None
 
-class Airplane(object):
+class Airplane:
     '''
     This is a more processed representation of the data about an airplane,
     more suitable for pointing telescopes. It can be computed from a RawAirplane
@@ -161,7 +161,7 @@ class Airplane(object):
 
         return new
 
-class Sbs1Receiver(object):
+class Sbs1Receiver:
     '''
     Manages a collection of threads and processes that ingest SBS-1 data from airplane
     servers and turn it into a continuously updated dict of Airplane objects that can

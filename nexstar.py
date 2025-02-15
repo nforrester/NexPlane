@@ -131,7 +131,7 @@ def speak_delay(speak_fun):
         return response
     return delayed_speak
 
-class SerialNetClient(object):
+class SerialNetClient:
     '''
     The telescope is connected to a different computer.
     Talk to it via an RPC server running on that computer.
@@ -157,7 +157,7 @@ class SerialNetClient(object):
     def close(self):
         pass
 
-class NexStarSerialHootl(object):
+class NexStarSerialHootl:
     '''
     A telescope simulator used for Hardware Out Of The Loop (HOOTL) testing.
     This lets you test the software without the risk of damaging your telescope,
@@ -526,7 +526,7 @@ class NexStarSerialHootl(object):
 
             raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
-class NexStar(object):
+class NexStar:
     '''The main interface for speaking to a NexStar telescope.
 
     Call member functions to send commands with arguments in sensible units,

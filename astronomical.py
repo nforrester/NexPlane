@@ -31,7 +31,7 @@ solar_system_bodies = [
     'neptune'
 ]
 
-class AstroBody(object):
+class AstroBody:
     '''Makes it easy to repeatedly compute the azimuth and elevation of an astronomical body over time.'''
     def __init__(self, name, observatory):
         '''

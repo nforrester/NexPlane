@@ -3,7 +3,7 @@ import socket
 import sys
 import threading
 
-class TextServer(object):
+class TextServer:
     '''Accepts TCP client connections and serves a continuous stream of text to all currently connected clients.'''
     def __init__(self, port):
         '''port: TCP port to listen on.'''

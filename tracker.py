@@ -10,7 +10,7 @@ import time
 import nexstar
 import util
 
-class PidController(object):
+class PidController:
     '''Does exactly what it says on the tin.'''
     def __init__(self, kp, ki, kd):
         '''Create a new PidController with the specified gains.'''
@@ -54,7 +54,7 @@ class PidController(object):
 
         return output
 
-class Tracker(object):
+class Tracker:
     '''Run a PidController for each axis, and drive the telescope to point at targets.'''
     def __init__(self, telescope, kp, ki, kd, altaz_mode):
         '''

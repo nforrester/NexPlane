@@ -19,7 +19,7 @@ class AxisStatus:
     init_done: bool
     level_switch_on: bool
 
-class SkyWatcherSerialHootl(object):
+class SkyWatcherSerialHootl:
     # TODO DOC ME
     def __init__(self):
         # Configuration
@@ -274,7 +274,7 @@ def decode_int_6(s):
     h = s[4:6] + s[2:4] + s[0:2]
     return int(h, 16)
 
-class SkyWatcher(object):
+class SkyWatcher:
     '''The main interface for speaking to a SkyWatcher telescope.
 
     Call member functions to send commands with arguments in sensible units,

@@ -29,7 +29,7 @@ class SatError(Exception):
     '''If a satellite cannot be modelled for some reason, raise this exception.'''
     pass
 
-class Sat(object):
+class Sat:
     '''Computes the current location of a satellite.'''
     def __init__(self, name, one, two):
         '''

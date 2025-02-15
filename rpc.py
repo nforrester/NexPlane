@@ -17,7 +17,7 @@ import select
 import time
 import traceback
 
-class DupDetector(object):
+class DupDetector:
     '''
     We need to detect duplicate messages so we can ignore them. Message IDs come
     mostly sequentially, but can arrive slightly out of order. We can't just
@@ -70,7 +70,7 @@ class RpcRemoteException(Exception):
     '''Raised on the client if the command on the server raises an exception.'''
     pass
 
-class RpcClient(object):
+class RpcClient:
     '''Make Remote Procedure Calls to a server which executes them.'''
     def __init__(self, host_port):
         '''
@@ -148,7 +148,7 @@ class RpcClient(object):
         self.reset_connection()
         raise RpcConnectionFailure('Connection failure.')
 
-class RpcServer(object):
+class RpcServer:
     '''Service Remote Procedure Calls and report the results back to the clients.'''
     def __init__(self, port):
         host_port = ('0.0.0.0', port)
