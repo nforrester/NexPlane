@@ -42,6 +42,7 @@ class Gui(object):
         self.iface_moon_azm_alt = (0.0, 0.0)   # Where is the Moon?               (azimuth, elevation). radians.
         self.iface_airplanes = dict()          # The airplanes to draw, as returned by sbs1_receiver.get_planes().
         self.iface_tracked_plane = None        # Hex code of the airplane the user wants to track.
+        self.iface_warn_comm_failure = False   # If true, display a warning about a communication error.
 
         # Manually applied azimuth and elevation offsets.
         self.iface_azm_offset = 0.0
@@ -88,6 +89,16 @@ class Gui(object):
             self.iface_sun_azm_alt = sun_azm_alt
             self.iface_moon_azm_alt = moon_azm_alt
             self.iface_airplanes = copied_airplanes
+
+    def update_comm_failure(self, warn_comm_failure):
+        '''
+        Call from the main thread to feed new data to the GUI so it can be displayed.
+        See comments in __init__() for parameter definitions.
+        '''
+        if not self.thread.is_alive():
+            raise Exit
+        with self.iface_lock:
+            self.iface_warn_comm_failure = warn_comm_failure
 
     def get_inputs(self):
         '''Call from the main thread to get the user's latest desires. See comments in __init__() for return value definitions.'''
@@ -166,6 +177,7 @@ class Gui(object):
             sun_azm, sun_alt = self.iface_sun_azm_alt
             moon_azm, moon_alt = self.iface_moon_azm_alt
             airplanes = copy.deepcopy(self.iface_airplanes)
+            warn_comm_failure = self.iface_warn_comm_failure
 
         # Clear the window and prepare for drawing.
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
@@ -189,6 +201,7 @@ class Gui(object):
                 tracked_last_known_color         = all_black
                 tracked_projected_color          = all_black
                 moon_color                       = all_black
+                warn_color                       = all_black
             else:
                 all_white = (1.0, 1.0, 1.0)
 
@@ -203,6 +216,7 @@ class Gui(object):
                 tracked_last_known_color         = all_white
                 tracked_projected_color          = all_white
                 moon_color                       = all_white
+                warn_color                       = all_white
         else:
             # Define some useful colors
             if self.white_bg:
@@ -226,6 +240,7 @@ class Gui(object):
             eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
             tracked_last_known_color         = (1.0, 0.4, 0.4) # Dark orange
             tracked_projected_color          = (1.0, 0.6, 0.6) # Light orange
+            warn_color                       = (1.0, 0.0, 0.0) # Red
 
         # Draw the horizon and axis labels.
         self._draw_horizon(horizon_color)
@@ -281,13 +296,21 @@ class Gui(object):
                 extrapolated = airplane.extrapolate(time.monotonic_ns())
                 self._draw_marker(projected_color, view_radius, extrapolated.az.value, extrapolated.el.value)
 
+        # Warn of a communication failure, if any.
+        if warn_comm_failure:
+            gl.glColor3f(*warn_color)
+            x, y = self._azm_alt_to_x_y(math.pi, 45/180*math.pi)
+            warn_font = glut.GLUT_BITMAP_TIMES_ROMAN_24
+            self._draw_text(x-220, y+15, 'TELESCOPE COMMUNICATION FAILURE!', font=warn_font)
+            self._draw_text(x-140, y-15, 'PREVENT COLLISION!!!!', font=warn_font)
+
         # Update the screen.
         glut.glutSwapBuffers()
 
-    def _draw_text(self, x, y, text):
+    def _draw_text(self, x, y, text, font=glut.GLUT_BITMAP_9_BY_15):
         '''Draw some text at the given location on screen.'''
         gl.glRasterPos2f(x, y)
-        glut.glutBitmapString(glut.GLUT_BITMAP_9_BY_15, text.encode())
+        glut.glutBitmapString(font, text.encode())
 
     def _draw_horizon(self, color):
         '''Draw the horizon and axis labels.'''

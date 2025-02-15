@@ -84,6 +84,13 @@ class RpcClient(object):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('0.0.0.0', int(port)+1))
 
+        self.reset_connection()
+
+    def reset_connection(self):
+        '''
+        Reset the connection to the server, because more packets
+        have been dropped than can be compensated for.
+        '''
         # ID of the next command.
         self.counter = 0
 
@@ -138,6 +145,7 @@ class RpcClient(object):
             # Increment the message ID.
             self.counter += 1
 
+        self.reset_connection()
         raise RpcConnectionFailure('Connection failure.')
 
 class RpcServer(object):

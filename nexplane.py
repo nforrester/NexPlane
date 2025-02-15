@@ -6,6 +6,7 @@ import math
 import numpy
 import sys
 import time
+import traceback
 
 import astropy.time
 import astropy.coordinates as coords
@@ -206,72 +207,79 @@ def main():
                     dec_cal = 0.0
 
             # Main loop
+            warn_comm_failure = False
             while True:
-                time.sleep(0.05)
+                try:
+                    gui_iface.update_comm_failure(warn_comm_failure)
 
-                # Get current status of airplanes.
-                planes = sbs1_receiver.get_planes()
+                    time.sleep(0.05)
 
-                # Get current telescope position.
-                if args.mount_mode == 'altaz':
-                    scope_azm_raw, scope_alt_raw = telescope.get_precise_azm_alt()
-                    scope_azm_alt = (util.wrap_rad(scope_azm_raw + azm_cal, 0), util.wrap_rad(scope_alt_raw + alt_cal, 0))
-                else:
-                    scope_ra_raw, scope_dec_raw = telescope.get_precise_ra_dec()
-                    scope_ra = util.wrap_rad(scope_ra_raw + ra_cal, -math.pi)
-                    scope_dec = util.wrap_rad(scope_dec_raw + dec_cal, -math.pi)
-                    scope_alt, scope_azm = util.radec_to_altaz(scope_ra, scope_dec, observatory_location, util.get_current_time())
-                    scope_azm_alt = (scope_azm, scope_alt)
+                    # Get current status of airplanes.
+                    planes = sbs1_receiver.get_planes()
 
-                # Send new data to the to GUI so it can update the drawing.
-                gui_iface.provide_update(scope_azm_alt=scope_azm_alt,
-                                         sun_azm_alt=sun.az_el(),
-                                         moon_azm_alt=moon.az_el(),
-                                         airplanes=planes)
-
-                # Receive new user inputs from the GUI.
-                tracked_plane_hex_id, az_offset, el_offset, kp, ki, kd, gain_changes = gui_iface.get_inputs()
-
-                # If the user requested a change to the controller gains, update them accordingly.
-                if last_gain_changes != gain_changes:
-                    print('kp =', kp, 'ki =', ki, 'kd =', kd)
-                    target_tracker.set_gains(kp, ki, kd)
-                last_gain_changes = gain_changes
-
-                if azm_alt_ang_dist(scope_azm_alt, sun.az_el()) < 20/180*math.pi:
-                    # We've strayed into the keep out circle around the Sun! Emergency Stop!
-                    # The user can fix this with the hand controller.
-                    target_tracker.stop()
-                    gui_iface.stop_tracking()
-                elif tracked_plane_hex_id is None:
-                    # There is no airplane to track, so stop the tracker.
-                    target_tracker.stop()
-                elif tracked_plane_hex_id in planes:
-                    # Extrapolate from the last known position and velocity of the plane to estimate the current position.
-                    tracked_plane = planes[tracked_plane_hex_id].extrapolate(time.monotonic_ns())
-
-                    # Inform the target tracker of the target position and the current position of the telescope.
+                    # Get current telescope position.
                     if args.mount_mode == 'altaz':
-                        target_tracker.go(util.wrap_rad(tracked_plane.az.value + az_offset - azm_cal, scope_azm_raw - math.pi),
-                                          util.wrap_rad(tracked_plane.el.value + el_offset - alt_cal, scope_alt_raw - math.pi))
+                        scope_azm_raw, scope_alt_raw = telescope.get_precise_azm_alt()
+                        scope_azm_alt = (util.wrap_rad(scope_azm_raw + azm_cal, 0), util.wrap_rad(scope_alt_raw + alt_cal, 0))
                     else:
-                        tracked_plane_ra, tracked_plane_dec = util.altaz_to_radec(
-                            tracked_plane.el.value + el_offset,
-                            tracked_plane.az.value + az_offset,
-                            observatory_location,
-                            util.get_current_time())
-                        target_tracker.go(tracked_plane_ra - ra_cal, tracked_plane_dec - dec_cal)
-                else:
-                    # If no data is available for the target, stop tracking and inform the GUI of that fact.
-                    target_tracker.stop()
-                    gui_iface.stop_tracking()
+                        scope_ra_raw, scope_dec_raw = telescope.get_precise_ra_dec()
+                        scope_ra = util.wrap_rad(scope_ra_raw + ra_cal, -math.pi)
+                        scope_dec = util.wrap_rad(scope_dec_raw + dec_cal, -math.pi)
+                        scope_alt, scope_azm = util.radec_to_altaz(scope_ra, scope_dec, observatory_location, util.get_current_time())
+                        scope_azm_alt = (scope_azm, scope_alt)
 
+                    # Send new data to the to GUI so it can update the drawing.
+                    gui_iface.provide_update(scope_azm_alt=scope_azm_alt,
+                                             sun_azm_alt=sun.az_el(),
+                                             moon_azm_alt=moon.az_el(),
+                                             airplanes=planes)
+
+                    # Receive new user inputs from the GUI.
+                    tracked_plane_hex_id, az_offset, el_offset, kp, ki, kd, gain_changes = gui_iface.get_inputs()
+
+                    # If the user requested a change to the controller gains, update them accordingly.
+                    if last_gain_changes != gain_changes:
+                        print('kp =', kp, 'ki =', ki, 'kd =', kd)
+                        target_tracker.set_gains(kp, ki, kd)
+                    last_gain_changes = gain_changes
+
+                    if azm_alt_ang_dist(scope_azm_alt, sun.az_el()) < 20/180*math.pi:
+                        # We've strayed into the keep out circle around the Sun! Emergency Stop!
+                        # The user can fix this with the hand controller.
+                        target_tracker.stop()
+                        gui_iface.stop_tracking()
+                    elif tracked_plane_hex_id is None:
+                        # There is no airplane to track, so stop the tracker.
+                        target_tracker.stop()
+                    elif tracked_plane_hex_id in planes:
+                        # Extrapolate from the last known position and velocity of the plane to estimate the current position.
+                        tracked_plane = planes[tracked_plane_hex_id].extrapolate(time.monotonic_ns())
+
+                        # Inform the target tracker of the target position and the current position of the telescope.
+                        if args.mount_mode == 'altaz':
+                            target_tracker.go(util.wrap_rad(tracked_plane.az.value + az_offset - azm_cal, scope_azm_raw - math.pi),
+                                              util.wrap_rad(tracked_plane.el.value + el_offset - alt_cal, scope_alt_raw - math.pi))
+                        else:
+                            tracked_plane_ra, tracked_plane_dec = util.altaz_to_radec(
+                                tracked_plane.el.value + el_offset,
+                                tracked_plane.az.value + az_offset,
+                                observatory_location,
+                                util.get_current_time())
+                            target_tracker.go(tracked_plane_ra - ra_cal, tracked_plane_dec - dec_cal)
+                    else:
+                        # If no data is available for the target, stop tracking and inform the GUI of that fact.
+                        target_tracker.stop()
+                        gui_iface.stop_tracking()
+
+                    # If we got to the end of the loop, communication is ok.
+                    warn_comm_failure = False
+
+                except rpc.RpcConnectionFailure:
+                    print(traceback.format_exc())
+                    print('Attempting to continue...')
+                    warn_comm_failure = True
         except gui.Exit:
             pass
-        except rpc.RpcConnectionFailure:
-            print(traceback.format_exc())
-            print('Restarting...')
-            continue
         finally:
             # Stop the telescope and clean up.
             telescope.slew_azmalt(0, 0)
