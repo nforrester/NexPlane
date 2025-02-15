@@ -43,7 +43,7 @@ def process_response(response, telescope_protocol):
 def read_response(telescope, telescope_protocol):
     response = ''
     start = time.monotonic()
-    while start + 3.5 > time.monotonic() and process_response(response, telescope_protocol) is None:
+    while start + 0.5 > time.monotonic() and process_response(response, telescope_protocol) is None:
         response += telescope.read().decode(encoding='ISO-8859-1')
     return response
 

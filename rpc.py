@@ -114,11 +114,11 @@ class RpcClient(object):
             args,
             kwargs)).encode()
 
-        overall_timeout = 5.0 # How long to wait before giving up.
+        overall_timeout = 1.0 # How long to wait before giving up.
         salvo_timeout = 0.1   # How long to wait before retransmitting.
         salvo_size = 3        # How many duplicate packets to send in each salvo.
         try:
-            give_up_time = time.monotonic() + 5.0
+            give_up_time = time.monotonic() + overall_timeout
             while time.monotonic() < give_up_time:
                 # Send a salvo of packets.
                 for _ in range(salvo_size):
