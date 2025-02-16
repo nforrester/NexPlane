@@ -2,11 +2,74 @@
 
 import copy
 import math
+import select
+import socket
 import threading
 import time
 from dataclasses import dataclass
 
 from nexstar import SerialNetClient, CommError, speak_delay
+
+class SkyWatcherUdpClient:
+    # TODO DOC ME
+    def __init__(self, host_port):
+        # TODO DOC ME
+        host, port = host_port.split(':')
+        self.host_port = (host, int(port))
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
+        self.sock.bind(('0.0.0.0', int(port)+1))
+
+    def speak(self, line):
+        self.sock.sendto((line + '\r').encode(), self.host_port)
+
+        # Await a reply, timing out at failure_time.
+        failure_time = time.monotonic() + 1.0
+        while time.monotonic() < failure_time:
+            ready, _, _ = select.select([self.sock], [], [], failure_time - time.monotonic())
+            # If we got a reply,
+            if ready:
+                # receive it,
+                data, _ = self.sock.recvfrom(10000)
+                # decode it,
+                response = data.decode()
+                # parse it,
+                if len(response) == 0:
+                    raise CommError(repr(response))
+                if response[0] != '=':
+                    raise CommError(repr(response))
+                if response[-1] != '\r':
+                    raise CommError(repr(response))
+                return response[1:-1]
+        raise CommError('Timeout waiting for response to ' + repr(line))
+
+    def close(self):
+        self.sock.close()
+
+
+class SkyWatcherUdpServerHootl:
+    # TODO DOC ME
+    def __init__(self, port):
+        # TODO DOC ME
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
+        self.sock.bind(('0.0.0.0', int(port)))
+
+        self.simulator = SkyWatcherSerialHootl()
+
+    def run(self):
+        while True:
+            ready, _, _ = select.select([self.sock], [], [], 1.0)
+            if ready:
+                data, (host, port) = self.sock.recvfrom(10000)
+
+                command = data.decode()
+                assert command[-1] == '\r'
+
+                response = self.simulator.speak(command[:-1])
+
+                self.sock.sendto(('=' + response + '\r').encode(), (host, port))
+
 
 @dataclass
 class AxisStatus:

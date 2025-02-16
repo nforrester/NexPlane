@@ -124,10 +124,13 @@ def main():
                                                       observatory_location=observatory_location,
                                                       altaz_mode=(args.mount_mode == 'altaz'))
         else:
-            assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod']
+            assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
             serial_iface = skywatcher.SkyWatcherSerialHootl()
     else:
-        serial_iface = nexstar.SerialNetClient(args.telescope)
+        if args.telescope_protocol == 'skywatcher-mount-head-wifi':
+            serial_iface = skywatcher.SkyWatcherUdpClient(args.telescope)
+        else:
+            serial_iface = nexstar.SerialNetClient(args.telescope)
 
     # Receive airplane data.
     sbs1_receiver = sbs1.Sbs1Receiver(args.sbs1, observatory_location)
@@ -146,7 +149,7 @@ def main():
             if args.telescope_protocol == 'nexstar-hand-control':
                 telescope = nexstar.NexStar(serial_iface)
             else:
-                assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod']
+                assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
                 telescope = skywatcher.SkyWatcher(serial_iface)
 
             # Tracking controller, sends commands to the telescope.
