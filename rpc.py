@@ -82,6 +82,7 @@ class RpcClient:
 
         # Listen for replies on port+1.
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
         self.sock.bind(('0.0.0.0', int(port)+1))
 
         self.reset_connection()
@@ -154,6 +155,7 @@ class RpcServer:
         host_port = ('0.0.0.0', port)
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
         self.sock.bind(host_port)
 
         self.dups = dict()                  # For each client ID, stores a DupDetector.

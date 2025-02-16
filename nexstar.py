@@ -142,7 +142,6 @@ class SerialNetClient:
         The argument is a string with the hostname or IP address of the RPC server,
         and the port number to connect to, separated by a colon. For example, '192.168.0.2:45345'.
         '''
-        socket.setdefaulttimeout(5.0)
         self.client = rpc.RpcClient(host_port)
         assert self.client.call('hello') == 'hello'
 
