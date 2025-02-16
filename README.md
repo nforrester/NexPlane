@@ -48,6 +48,10 @@ Quick summary of new features:
     the hand controller) with a USB cable.
   - `skywatcher-mount-head-eqmod` - Your computer is plugged into a Sky-Watcher mount head (not
     the hand controller) with an EQMOD cable.
+  - `skywatcher-mount-head-wifi` - Your computer is connected to a Sky-Watcher mount head
+    via WiFi. If using this option, DO NOT start `telescope_server.py`. Instead, pass
+    `--telescope <IP address of mount head on the wifi>:11880` to `nexplane.py`, and the
+    mount head itself will be the server.
 - Unlike for NexStar mounts, Sky-Watcher mounts are not able to report their position to
   NexPlane in an aligned coordinate system. You therefore must use `--landmark` alignment
   with Sky-Watcher mounts.
