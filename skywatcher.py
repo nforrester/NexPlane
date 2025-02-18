@@ -6,6 +6,7 @@ https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_comman
 
 import copy
 import math
+import random
 import select
 import socket
 import threading
@@ -13,6 +14,10 @@ import time
 from dataclasses import dataclass
 
 from nexstar import SerialNetClient, CommError, speak_delay
+
+class UnreliableCommError(Exception):
+    '''Raised when the telescope does not respond, but this may be a fluke.'''
+    pass
 
 class SkyWatcherUdpClient:
     # TODO DOC ME
@@ -28,7 +33,7 @@ class SkyWatcherUdpClient:
         self.sock.sendto((line + '\r').encode(), self.host_port)
 
         # Await a reply, timing out at failure_time.
-        failure_time = time.monotonic() + 1.0
+        failure_time = time.monotonic() + 0.10
         while time.monotonic() < failure_time:
             ready, _, _ = select.select([self.sock], [], [], failure_time - time.monotonic())
             # If we got a reply,
@@ -45,7 +50,7 @@ class SkyWatcherUdpClient:
                 if response[-1] != '\r':
                     raise CommError(repr(response))
                 return response[1:-1]
-        raise CommError('Timeout waiting for response to ' + repr(line))
+        raise UnreliableCommError('Timeout waiting for response to ' + repr(line))
 
     def close(self):
         self.sock.close()
@@ -72,7 +77,9 @@ class SkyWatcherUdpServerHootl:
 
                 response = self.simulator.speak(command[:-1])
 
-                self.sock.sendto(('=' + response + '\r').encode(), (host, port))
+                # Drop packets with 2% probability.
+                if random.random() > 0.02:
+                    self.sock.sendto(('=' + response + '\r').encode(), (host, port))
 
 
 @dataclass

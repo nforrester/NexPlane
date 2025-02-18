@@ -276,7 +276,13 @@ def main():
 
                     # If we got to the end of the loop, communication is ok.
                     warn_comm_failure = False
+                    unreliable_comm_count = 0
 
+                except skywatcher.UnreliableCommError:
+                    unreliable_comm_count += 1
+                    if unreliable_comm_count > 5:
+                        print('Telescope communication lost! Attempting to continue...')
+                        warn_comm_failure = True
                 except nexstar.CommError:
                     print(traceback.format_exc())
                     print('Attempting to continue...')
