@@ -1,4 +1,8 @@
-# TODO DOC ME
+'''
+This file implements the Sky-Watcher Motor Controller Command Set documented in
+https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf
+'''
+# TODO FINISH DOC ME
 
 import copy
 import math
