@@ -30,6 +30,18 @@ class SkyWatcherUdpClient:
         self.sock.bind(('0.0.0.0', int(port)+1))
 
     def speak(self, line):
+        # Consume any trash data in the receive buffer that's obviously not
+        # a response to the command we're about to issue.
+        while True:
+            ready, _, _ = select.select([self.sock], [], [], 0)
+            if ready:
+                self.sock.recvfrom(10000)
+            else:
+                break
+
+        # Transmit our command.
+        # TODO REMOVE PRINT
+        print(time.time(), line)
         self.sock.sendto((line + '\r').encode(), self.host_port)
 
         # Await a reply, timing out at failure_time.
@@ -42,6 +54,8 @@ class SkyWatcherUdpClient:
                 data, _ = self.sock.recvfrom(10000)
                 # decode it,
                 response = data.decode()
+                # TODO REMOVE PRINT
+                print(time.time(), response)
                 # parse it,
                 if len(response) == 0:
                     raise CommError(repr(response))
@@ -77,9 +91,15 @@ class SkyWatcherUdpServerHootl:
 
                 response = self.simulator.speak(command[:-1])
 
-                # Drop packets with 2% probability.
-                if random.random() > 0.02:
-                    self.sock.sendto(('=' + response + '\r').encode(), (host, port))
+                # Drop packets with 1% probability.
+                if random.random() < 0.01:
+                    continue
+
+                # Delay packets with 1% probability.
+                if random.random() < 0.01:
+                    time.sleep(0.5 * random.random())
+
+                self.sock.sendto(('=' + response + '\r').encode(), (host, port))
 
 
 @dataclass
@@ -348,6 +368,60 @@ def decode_int_6(s):
     h = s[4:6] + s[2:4] + s[0:2]
     return int(h, 16)
 
+class PositionFilter:
+    # TODO DOC ME
+    def __init__(self, label):
+        self.locked_position = None
+        self.locked_update_time = float('-inf')
+        self.proposed_position = None
+        self.proposed_persistence = 0
+        self.label = label
+
+    def update(self, new_position):
+        # TODO DOC ME
+        now = time.time()
+        time_tol = 1.5
+        max_degrees_per_second = 5.3
+        pos_tol = time_tol * max_degrees_per_second / 180.0 * math.pi
+
+        def update_proposed_lock():
+            if self.proposed_position is not None:
+                if abs(new_position - self.proposed_position) < pos_tol:
+                    self.proposed_persistence += 1
+                else:
+                    # TODO REMOVE PRINT
+                    print(now, self.label, 'Reset proposed lock.')
+                    self.proposed_persistence = 0
+            self.proposed_position = new_position
+
+            # Accept the new lock if the proposed lock is persistent.
+            if self.proposed_persistence > 40:
+                # TODO REMOVE PRINT
+                print(now, self.label, 'Accept proposed lock.')
+                self.locked_position = new_position
+                self.locked_update_time = now
+                self.proposed_position = None
+                self.proposed_persistence = 0
+
+        if self.locked_position is None:
+            # We have no existing lock.
+            update_proposed_lock()
+            return True
+        # We have an existing lock.
+
+        if abs(new_position - self.locked_position) < pos_tol:
+            # This is within tolerance, so accept the update.
+            self.locked_position = new_position
+            self.locked_update_time = now
+            return True
+        # This is outside tolerance.
+
+        update_proposed_lock()
+
+        # The caller should only accept this new position if the
+        # lock wasn't updated recently.
+        return now - self.locked_update_time > time_tol
+
 class SkyWatcher:
     '''The main interface for speaking to a SkyWatcher telescope.
 
@@ -387,6 +461,10 @@ class SkyWatcher:
         self.rate = [None]
         self.rate.append(0.0)
         self.rate.append(0.0)
+
+        self.position_filter = [None]
+        self.position_filter.append(PositionFilter('RA: '))
+        self.position_filter.append(PositionFilter('Dec:'))
 
     def _speak(self, command, response_len):
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
@@ -433,7 +511,10 @@ class SkyWatcher:
         # TODO DOC ME
         r = self._speak(':j' + str(axis), 6)
         v = decode_int_6(r)
-        return v / self.cpr[axis] * 2 * math.pi
+        position = v / self.cpr[axis] * 2 * math.pi
+        if self.position_filter[axis].update(position):
+            return position
+        raise CommError('New position seems wrong: ' + r)
 
     def get_precise_ra_dec(self):
         # TODO DOC ME
@@ -465,7 +546,8 @@ class SkyWatcher:
     def _slew_axis(self, axis, rate):
         if rate == 0 or (self.rate[axis] * rate < 0):
             self._speak(':K' + str(axis), 0)
-            self.rate[axis] = 0
+            if not self._inquire_status(axis).running:
+                self.rate[axis] = 0
             return
 
         if self.rate[axis] == 0:

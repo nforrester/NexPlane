@@ -287,6 +287,10 @@ def main():
                     print(traceback.format_exc())
                     print('Attempting to continue...')
                     warn_comm_failure = True
+                    if args.telescope_protocol == 'skywatcher-mount-head-wifi':
+                        # This protocol can have inconsistent delays, wait a moment for
+                        # packets in flight to arrive before trying to resume communication.
+                        time.sleep(0.10)
                 except rpc.RpcConnectionFailure:
                     print(traceback.format_exc())
                     print('Attempting to continue...')
