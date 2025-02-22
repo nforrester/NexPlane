@@ -32,17 +32,19 @@ import select
 import socket
 import threading
 import time
+import sys
 from dataclasses import dataclass
 
-from mount_base import CommError, speak_delay
+from mount_base import Client, Mount, CommError, speak_delay, TrackingMode
+from util import unwrap
 
 class UnreliableCommError(Exception):
     '''Raised when the telescope does not respond, but this may be a fluke.'''
     pass
 
-class SkyWatcherUdpClient:
+class SkyWatcherUdpClient(Client):
     # TODO DOC ME
-    def __init__(self, host_port):
+    def __init__(self, host_port: str):
         # TODO DOC ME
         host, port = host_port.split(':')
         self.host_port = (host, int(port))
@@ -50,7 +52,7 @@ class SkyWatcherUdpClient:
         self.sock.settimeout(1.0)
         self.sock.bind(('0.0.0.0', int(port)+1))
 
-    def speak(self, line):
+    def speak(self, line: str) -> str:
         # Consume any trash data in the receive buffer that's obviously not
         # a response to the command we're about to issue.
         while True:
@@ -83,22 +85,22 @@ class SkyWatcherUdpClient:
                 return response[1:-1]
         raise UnreliableCommError('Timeout waiting for response to ' + repr(line))
 
-    def close(self):
+    def close(self) -> None:
         self.sock.close()
 
 
 class SkyWatcherUdpServerHootl:
     # TODO DOC ME
-    def __init__(self, port):
+    def __init__(self, port: int):
         # TODO DOC ME
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(1.0)
-        self.sock.bind(('0.0.0.0', int(port)))
+        self.sock.bind(('0.0.0.0', port))
 
         self.simulator = SkyWatcherSerialHootl()
         self.txn_count = 0
 
-    def run(self):
+    def run(self) -> None:
         while True:
             ready, _, _ = select.select([self.sock], [], [], 1.0)
             if ready:
@@ -132,9 +134,9 @@ class AxisStatus:
     init_done: bool
     level_switch_on: bool
 
-class SkyWatcherSerialHootl:
+class SkyWatcherSerialHootl(Client):
     # TODO DOC ME
-    def __init__(self):
+    def __init__(self) -> None:
         # Configuration
         self.cpr = 9216000
         self.hsr = 1
@@ -143,23 +145,23 @@ class SkyWatcherSerialHootl:
         self.max_rate = 5.0 / 360 * self.cpr # Counts per second
 
         # Simulator state variables
-        self.pos = [None]
+        self.pos = [0]
         self.pos.append(0x800000) # Counts
         self.pos.append(0x800000)
 
-        self.rate = [None]
+        self.rate = [0.0]
         self.rate.append(0.0) # Counts per second
         self.rate.append(0.0)
 
-        self.cmd_rate = [None]
+        self.cmd_rate = [0.0]
         self.cmd_rate.append(0.0) # Counts per second
         self.cmd_rate.append(0.0)
 
-        self.wish_rate = [None]
+        self.wish_rate = [0.0]
         self.wish_rate.append(0.0) # Counts per second
         self.wish_rate.append(0.0)
 
-        self.axis_status = [None]
+        self.axis_status: list[AxisStatus | None] = [None]
         for _ in ['ra', 'dec']:
             self.axis_status.append(AxisStatus(
                 tracking=False,
@@ -178,21 +180,21 @@ class SkyWatcherSerialHootl:
         self.lock = threading.Lock()
 
         # Start the simulator thread.
-        def run_thread():
+        def run_thread() -> None:
             self._run_simulator()
         self.stop_thread = False
         self.thread = threading.Thread(target=run_thread)
         self.thread.start()
 
-    def close(self):
+    def close(self) -> None:
         '''Stop the simulator and join the simulator thread.'''
         self.stop_thread = True
         self.thread.join()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
-    def _run_simulator(self):
+    def _run_simulator(self) -> None:
         '''Simulator thread.'''
         wall_time = int(time.time()*1e9)
         while not self.stop_thread:
@@ -226,11 +228,11 @@ class SkyWatcherSerialHootl:
                         self.rate[axis] = self.cmd_rate[axis]
 
                     running = self.rate[axis] != 0
-                    self.axis_status[axis].tracking = running
-                    self.axis_status[axis].running = running
+                    unwrap(self.axis_status[axis]).tracking = running
+                    unwrap(self.axis_status[axis]).running = running
 
     @speak_delay
-    def speak(self, command):
+    def speak(self, command: str) -> str:
         '''Decode and execute a command, then encode and return a response.'''
         # If the simulator thread died, just give up.
         if not self.thread.is_alive():
@@ -263,7 +265,7 @@ class SkyWatcherSerialHootl:
                 assert len(command) == 3
                 assert command[2] in '12'
                 axis = int(command[2])
-                self.axis_status[axis].init_done = True
+                unwrap(self.axis_status[axis]).init_done = True
                 return ''
 
             # Inquire Status
@@ -271,7 +273,7 @@ class SkyWatcherSerialHootl:
                 assert len(command) == 3
                 assert command[2] in '12'
                 axis = int(command[2])
-                status = self.axis_status[axis]
+                status = unwrap(self.axis_status[axis])
                 value = 0
                 if status.tracking:
                     value = value | 0x100
@@ -309,7 +311,7 @@ class SkyWatcherSerialHootl:
                 assert len(command) == 5
                 assert command[2] in '12'
                 axis = int(command[2])
-                if self.axis_status[axis].running:
+                if unwrap(self.axis_status[axis]).running:
                     raise Exception('Illegal to set motion mode while axis in motion.')
                 value = decode_int_2(command[3:5])
                 if value & 0x10 == 0:
@@ -322,8 +324,8 @@ class SkyWatcherSerialHootl:
                     raise Exception('GOTO not implemented')
                 if value & 0x02 == 1:
                     raise Exception('South not implemented')
-                self.axis_status[axis].ccw = 0 != (value & 0x01)
-                self.axis_status[axis].fast = 0 != (value & 0x20)
+                unwrap(self.axis_status[axis]).ccw = 0 != (value & 0x01)
+                unwrap(self.axis_status[axis]).fast = 0 != (value & 0x20)
                 return ''
 
             # Set Step Period
@@ -335,7 +337,7 @@ class SkyWatcherSerialHootl:
                 rate = self.hsr * self.timer_freq / value
                 if rate > self.max_rate:
                     rate = self.max_rate
-                if self.axis_status[axis].ccw:
+                if unwrap(self.axis_status[axis]).ccw:
                     rate *= -1
                 self.wish_rate[axis] = rate
                 if self.cmd_rate[axis] != 0:
@@ -352,36 +354,36 @@ class SkyWatcherSerialHootl:
 
         raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
-def encode_int_2(v):
+def encode_int_2(v: int) -> str:
     # TODO DOC ME
     h = format(v, '02X')
     assert len(h) == 2, v
     return h
 
-def decode_int_2(s):
+def decode_int_2(s: str) -> int:
     # TODO DOC ME
     assert len(s) == 2, s
     return int(s, 16)
 
-def encode_int_4(v):
+def encode_int_4(v: int) -> str:
     # TODO DOC ME
     h = format(v, '04X')
     assert len(h) == 4, v
     return h[2:4] + h[0:2]
 
-def decode_int_4(s):
+def decode_int_4(s:str) -> int:
     # TODO DOC ME
     assert len(s) == 4, s
     h = s[2:4] + s[0:2]
     return int(h, 16)
 
-def encode_int_6(v):
+def encode_int_6(v: int) -> str:
     # TODO DOC ME
     h = format(v, '06X')
     assert len(h) == 6, v
     return h[4:6] + h[2:4] + h[0:2]
 
-def decode_int_6(s):
+def decode_int_6(s:str) -> int:
     # TODO DOC ME
     assert len(s) == 6, s
     h = s[4:6] + s[2:4] + s[0:2]
@@ -389,21 +391,21 @@ def decode_int_6(s):
 
 class PositionFilter:
     # TODO DOC ME
-    def __init__(self, label):
-        self.locked_position = None
+    def __init__(self, label: str):
+        self.locked_position: float | None = None
         self.locked_update_time = float('-inf')
-        self.proposed_position = None
+        self.proposed_position: float | None = None
         self.proposed_persistence = 0
         self.label = label
 
-    def update(self, new_position):
+    def update(self, new_position: float) -> bool:
         # TODO DOC ME
         now = time.time()
         time_tol = 1.5
         max_degrees_per_second = 5.3
         pos_tol = time_tol * max_degrees_per_second / 180.0 * math.pi
 
-        def update_proposed_lock():
+        def update_proposed_lock() -> None:
             if self.proposed_position is not None:
                 if abs(new_position - self.proposed_position) < pos_tol:
                     self.proposed_persistence += 1
@@ -441,12 +443,12 @@ class PositionFilter:
         # lock wasn't updated recently.
         return now - self.locked_update_time > time_tol
 
-class SkyWatcher:
-    '''The main interface for speaking to a SkyWatcher telescope.
+class SkyWatcher(Mount):
+    '''The main interface for speaking to a SkyWatcher telescope mount.
 
     Call member functions to send commands with arguments in sensible units,
     and they will return replies in sensible units.'''
-    def __init__(self, serial_port):
+    def __init__(self, serial_port: Client):
         '''
         The argument is an object that provides a speak() function for talking to the
         telescope in the SkyWatcher motor controller serial communication protocol
@@ -455,13 +457,13 @@ class SkyWatcher:
         '''
         self.serial_port = serial_port
 
-        self.cpr = [None]
-        self.cpr.append(self._inquire_counts_per_revolution(1))
-        self.cpr.append(self._inquire_counts_per_revolution(2))
+        self.cpr = dict()
+        self.cpr[1] = self._inquire_counts_per_revolution(1)
+        self.cpr[2] = self._inquire_counts_per_revolution(2)
 
-        self.hsr = [None]
-        self.hsr.append(self._inquire_high_speed_ratio(1))
-        self.hsr.append(self._inquire_high_speed_ratio(2))
+        self.hsr = dict()
+        self.hsr[1] = self._inquire_high_speed_ratio(1)
+        self.hsr[2] = self._inquire_high_speed_ratio(2)
 
         self.timer_freq = self._inquire_timer_freq()
 
@@ -477,26 +479,26 @@ class SkyWatcher:
             assert not status.blocked
             assert status.init_done
 
-        self.rate = [None]
-        self.rate.append(0.0)
-        self.rate.append(0.0)
+        self.rate = dict()
+        self.rate[1] = 0.0
+        self.rate[2] = 0.0
 
-        self.position_filter = [None]
-        self.position_filter.append(PositionFilter('RA: '))
-        self.position_filter.append(PositionFilter('Dec:'))
+        self.position_filter = dict()
+        self.position_filter[1] = PositionFilter('RA: ')
+        self.position_filter[2] = PositionFilter('Dec:')
 
-    def _speak(self, command, response_len):
+    def _speak(self, command: str, response_len: int) -> str:
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
         response = self.serial_port.speak(command)
         if len(response) != response_len:
             raise CommError(repr(response))
         return response
 
-    def _initialization_done(self, axis):
+    def _initialization_done(self, axis: int) -> None:
         # TODO DOC ME
         self._speak(':F' + str(axis), 0)
 
-    def _inquire_status(self, axis):
+    def _inquire_status(self, axis: int) -> AxisStatus:
         # TODO DOC ME
         r = self._speak(':f' + str(axis), 3)
         assert len(r) == 3
@@ -511,22 +513,22 @@ class SkyWatcher:
             level_switch_on = 0 != (value & 0x002),
         )
 
-    def _inquire_counts_per_revolution(self, axis):
+    def _inquire_counts_per_revolution(self, axis: int) -> int:
         # TODO DOC ME
         r = self._speak(':a' + str(axis), 6)
         return decode_int_6(r)
 
-    def _inquire_high_speed_ratio(self, axis):
+    def _inquire_high_speed_ratio(self, axis: int) -> int:
         # TODO DOC ME
         r = self._speak(':g' + str(axis), 2)
         return decode_int_2(r)
 
-    def _inquire_timer_freq(self):
+    def _inquire_timer_freq(self) -> int:
         # TODO DOC ME
         r = self._speak(':b1', 6)
         return decode_int_6(r)
 
-    def _inquire_position(self, axis):
+    def _inquire_position(self, axis: int) -> float:
         # TODO DOC ME
         r = self._speak(':j' + str(axis), 6)
         v = decode_int_6(r)
@@ -535,19 +537,19 @@ class SkyWatcher:
             return position
         raise CommError('New position seems wrong: ' + r)
 
-    def get_precise_ra_dec(self):
+    def get_precise_ra_dec(self) -> tuple[float, float]:
         # TODO DOC ME
         ra = -self._inquire_position(1)
         dec = self._inquire_position(2)
         return ra, dec
 
-    def get_precise_azm_alt(self):
+    def get_precise_azm_alt(self) -> tuple[float, float]:
         # TODO DOC ME
         azm = self._inquire_position(1)
         alt = self._inquire_position(2)
         return azm, alt
 
-    def _set_motion_mode(self, axis, fast, ccw):
+    def _set_motion_mode(self, axis: int, fast: bool, ccw: bool) -> None:
         value = 0x10
         if fast:
             value = value | 0x20
@@ -555,14 +557,14 @@ class SkyWatcher:
             value = value | 0x01
         self._speak(':G' + str(axis) + encode_int_2(value), 0)
 
-    def _set_step_period(self, axis, step_period):
+    def _set_step_period(self, axis: int, step_period: float) -> None:
         assert step_period >= 0
         step_period = int(step_period)
         if step_period > 0xffffff:
             step_period = 0xffffff
         self._speak(':I' + str(axis) + encode_int_6(step_period), 0)
 
-    def _slew_axis(self, axis, rate):
+    def _slew_axis(self, axis: int, rate: float) -> None:
         if rate == 0 or (self.rate[axis] * rate < 0):
             self._speak(':K' + str(axis), 0)
             if not self._inquire_status(axis).running:
@@ -585,34 +587,34 @@ class SkyWatcher:
 
         self.rate[axis] = rate
 
-    def slew_azm_or_ra(self, rate):
+    def slew_azm_or_ra(self, rate: float) -> None:
         self._slew_axis(1, rate)
 
-    def slew_alt_or_dec(self, rate):
+    def slew_alt_or_dec(self, rate: float) -> None:
         self._slew_axis(2, rate)
 
-    def slew_azm(self, rate):
+    def slew_azm(self, rate: float) -> None:
         self.slew_azm_or_ra(rate)
 
-    def slew_alt(self, rate):
+    def slew_alt(self, rate: float) -> None:
         self.slew_alt_or_dec(rate)
 
-    def slew_ra(self, rate):
+    def slew_ra(self, rate: float) -> None:
         self.slew_azm_or_ra(-rate)
 
-    def slew_dec(self, rate):
+    def slew_dec(self, rate: float) -> None:
         self.slew_alt_or_dec(rate)
 
-    def slew_azmalt(self, azm_rate, alt_rate):
+    def slew_azmalt(self, azm_rate: float, alt_rate: float) -> None:
         '''Set the Az/Alt slew rates.'''
         self.slew_azm(azm_rate)
         self.slew_alt(alt_rate)
 
-    def slew_radec(self, ra_rate, dec_rate):
+    def slew_radec(self, ra_rate: float, dec_rate: float) -> None:
         '''Set the RA/Dec slew rates.'''
         self.slew_ra(ra_rate)
         self.slew_dec(dec_rate)
 
-    def set_tracking_mode(self, mode):
+    def set_tracking_mode(self, mode: TrackingMode) -> None:
         '''Noop, provided for compatibility with NexStar.'''
         pass

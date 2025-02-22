@@ -14,6 +14,7 @@ It returns (bool, string), whether the telescope sent a valid-looking response, 
 or minus the leading '=' and trailing '\\r' for telescope_protocol='skywatcher-mount-head-usb' or 'skywatcher-mount-head-eqmod').
 '''
 
+import argparse
 import ast
 import os
 import serial
@@ -22,13 +23,15 @@ import termios
 import time
 import util
 
+from typing import Any
+
 import config
 import rpc
 
 from nexstar import NexStarSerialHootl
 from skywatcher import SkyWatcherSerialHootl
 
-def process_response(response, telescope_protocol):
+def process_response(response: str, telescope_protocol: str) -> str | None:
     if telescope_protocol == 'nexstar-hand-control':
         if len(response) == 0:
             return None
@@ -45,21 +48,21 @@ def process_response(response, telescope_protocol):
             return None
         return response[1:-1]
 
-def read_response(telescope, telescope_protocol):
+def read_response(telescope: serial.Serial, telescope_protocol: str) -> str:
     response = ''
     start = time.monotonic()
     while start + 0.5 > time.monotonic() and process_response(response, telescope_protocol) is None:
         response += telescope.read().decode(encoding='ISO-8859-1')
     return response
 
-def hello():
+def hello() -> str:
     return 'hello'
 
 class Box:
-    def __init__(self, x):
+    def __init__(self, x: Any):
         self.x = x
 
-def telescope_serial_udp_server(serial_port, net_port, telescope_protocol, observatory_location, altaz_mode):
+def telescope_serial_udp_server(serial_port: str | None, net_port: int, telescope_protocol: str, observatory_location: Any, altaz_mode: bool) -> None: # TODO Any
     if serial_port is not None:
         print('Opening', serial_port)
         sys.stdout.flush()
@@ -76,7 +79,7 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol, obser
         line_ending = '\r'
 
     telescope = Box(None)
-    def init_port():
+    def init_port() -> None:
         if serial_port is None:
             if telescope_protocol == 'nexstar-hand-control':
                 telescope.x = NexStarSerialHootl(current_time=util.get_current_time(),
@@ -88,11 +91,11 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol, obser
         else:
             telescope.x = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
     init_port()
-    def reinit_port():
+    def reinit_port() -> None:
         telescope.x.close()
         init_port()
 
-    def speak(line):
+    def speak(line: str) -> tuple[bool, str]:
         try:
             if serial_port is not None:
                 telescope.x.reset_input_buffer()
@@ -130,7 +133,7 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol, obser
     sys.stdout.flush()
     server.run()
 
-def parse_args_and_config():
+def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
     parser, config_data = config.get_arg_parser_and_config_data(
         description='Exposes the telescope serial interface on the network.')
@@ -174,7 +177,7 @@ def parse_args_and_config():
 
     return parser.parse_args(), config_data
 
-def main():
+def main() -> None:
     args, config_data = parse_args_and_config()
 
     if args.run_hootl:

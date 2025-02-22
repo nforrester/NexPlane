@@ -7,6 +7,7 @@ very fast, very high altitude airplanes and emit messages in approximately SBS-1
 format (compatible with sbs1.py).
 '''
 
+import argparse
 import math
 import numpy
 import random
@@ -14,6 +15,8 @@ import socket
 import sys
 import threading
 import time
+
+from typing import Any
 
 import config
 import text_server
@@ -31,7 +34,7 @@ class SatError(Exception):
 
 class Sat:
     '''Computes the current location of a satellite.'''
-    def __init__(self, name, one, two):
+    def __init__(self, name: str, one: str, two: str):
         '''
         name: The name of the satellite.
         one:  The first line of the TLE.
@@ -41,7 +44,7 @@ class Sat:
         self.model = Satrec.twoline2rv(one, two)
         self.catalog_num = one[3:8]
 
-    def earth_location(self, time):
+    def earth_location(self, time: Any) -> Any: # TODO Any
         '''Compute the EarthLocation of the satellite at the given time.'''
         # I don't have a really great understanding of how this works.
         # I just hacked it together by looking at
@@ -56,7 +59,7 @@ class Sat:
         itrs = teme.transform_to(coords.ITRS(obstime=time))
         return itrs.earth_location
 
-def parse_tle_file(filename):
+def parse_tle_file(filename: str) -> list[Sat]:
     '''
     Parse a TLE file. Each entry should be three lines
     (the first being the name of the satellite).
@@ -82,7 +85,7 @@ def parse_tle_file(filename):
                 two = None
         return sats
 
-def parse_args_and_config():
+def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
     parser, config_data = config.get_arg_parser_and_config_data(
         description='Consume TLE files that you downloaded from CelesTrak, '
@@ -105,7 +108,7 @@ def parse_args_and_config():
 
     return parser.parse_args(), config_data
 
-def main():
+def main() -> None:
     args, config_data = parse_args_and_config()
 
     # Where are we?
@@ -120,7 +123,7 @@ def main():
     sats = list(sats_dict.values())
 
     # The time when each satellite should next be updated.
-    next_predict_times = [0]*len(sats)
+    next_predict_times: list[float] = [0]*len(sats)
 
     # Handles all the stuff for distributing the output to the clients on the network.
     server = text_server.TextServer(args.port)

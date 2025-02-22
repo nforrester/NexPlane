@@ -2,11 +2,13 @@
 
 import time
 
+from typing import Any
+
 import astropy.time
 import astropy.coordinates as coords
 import astropy.units as units
 
-def sky_coord_to_az_el(sky_coord, now, observatory):
+def sky_coord_to_az_el(sky_coord: Any, now: astropy.time.Time, observatory: Any) -> tuple[float, float]: # TODO Any
     '''Determine the azimuth and elevation corresponding to the position of an astronomical body.
 
     sky_coord    The astropy.coordinates.SkyCoord of the astronomical body.
@@ -33,7 +35,7 @@ solar_system_bodies = [
 
 class AstroBody:
     '''Makes it easy to repeatedly compute the azimuth and elevation of an astronomical body over time.'''
-    def __init__(self, name, observatory):
+    def __init__(self, name: str, observatory: Any): # TODO Any
         '''
         name         The name of the astronomical body, to be looked up in astropy's databases.
                      This will not throw an exception if it doesn't exist, but self.az_el() will return None.
@@ -41,10 +43,10 @@ class AstroBody:
         '''
         self._name = name
         self._observatory = observatory
-        self._az_el = None
-        self._az_el_time = None
+        self._az_el: tuple[float, float] | None = None
+        self._az_el_time: float | None = None
 
-    def az_el(self):
+    def az_el(self) -> tuple[float, float] | None:
         '''Returns (azimuth, elevation) in radians, right now. Returns None if the astronomical body does not exist.'''
         now_unix = time.time()
 

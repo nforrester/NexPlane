@@ -5,22 +5,22 @@ import threading
 
 class TextServer:
     '''Accepts TCP client connections and serves a continuous stream of text to all currently connected clients.'''
-    def __init__(self, port):
+    def __init__(self, port: int):
         '''port: TCP port to listen on.'''
         # List of currently active connections to clients.
-        self.connections = []
+        self.connections: list[socket.socket] = []
 
         # Lock for the connections list so the main thread doesn't write
         # while the listener thread is updating it.
         self.lock = threading.Lock()
 
         # Start the connection listener thread.
-        def run_thread():
+        def run_thread() -> None:
             self._listen(port)
         self.thread = threading.Thread(target=run_thread)
         self.thread.start()
 
-    def write(self, text):
+    def write(self, text: str) -> None:
         '''Called by the main thread to write more text to the clients.'''
         with self.lock:
             idx = 0
@@ -34,7 +34,7 @@ class TextServer:
                     del self.connections[idx]
                 idx += 1
 
-    def _listen(self, port):
+    def _listen(self, port: int) -> None:
         '''Thread that listens for new clients.'''
         sock = socket.socket()
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

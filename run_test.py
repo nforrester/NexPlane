@@ -6,7 +6,10 @@ import itertools
 import subprocess
 import sys
 
+from typing import Any, Iterator
 from contextlib import contextmanager
+
+from util import assert_int
 
 LOCATION = 'griffith'
 LANDMARK = 'hollywood_sign'
@@ -14,7 +17,7 @@ SAT_PORT = '40004'
 SCOPE_PORT = '45345'
 
 @contextmanager
-def bg(cmd):
+def bg(cmd: list[str]) -> Iterator:
     print(' '.join(cmd))
     proc = subprocess.Popen(cmd)
     try:
@@ -23,14 +26,31 @@ def bg(cmd):
         proc.terminate()
         proc.wait()
 
-def fg(cmd):
+def fg(cmd: list[str]) -> None:
     print(' '.join(cmd))
-    subprocess.check_call(cmd)
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError:
+        print('Test FAILED!')
+        sys.exit(1)
 
-def satellites():
+def run_mypy() -> None:
+    fg([
+        'mypy',
+        'dump_config.py',
+        'nexplane.py',
+        'rpc_client_test.py',
+        'rpc_server_test.py',
+        'run_test.py',
+        'satellites.py',
+        'skywatcher_wifi_hootl.py',
+        'telescope_server.py',
+    ])
+
+def satellites() -> Any:
     return bg(['./satellites.py', 'tle/geo.txt', '--location', LOCATION, '--port', SAT_PORT])
 
-def telescope_server(telescope_protocol, mount_mode):
+def telescope_server(telescope_protocol: str, mount_mode: str) -> Any:
     return bg([
         './telescope_server.py',
         '--hootl',
@@ -40,7 +60,7 @@ def telescope_server(telescope_protocol, mount_mode):
         '--mount-mode', mount_mode,
     ])
 
-def nexplane_maybe_hootl(hootl, telescope_protocol, mount_mode, *args):
+def nexplane_maybe_hootl(hootl: bool, telescope_protocol: str, mount_mode: str, *args: str) -> None:
     fg([
         './nexplane.py',
         ('--hootl' if hootl else '--no-hootl'),
@@ -52,25 +72,29 @@ def nexplane_maybe_hootl(hootl, telescope_protocol, mount_mode, *args):
         *args,
     ])
 
-def nexplane(*args):
-    nexplane_maybe_hootl(True, *args)
+def nexplane(*args: str) -> None:
+    with satellites():
+        nexplane_maybe_hootl(True, *args)
 
-def nexplane_with_server(telescope_protocol, mount_mode, *args):
-    with telescope_server(telescope_protocol, mount_mode):
-        nexplane_maybe_hootl(False, telescope_protocol, mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
+def nexplane_with_server(telescope_protocol: str, mount_mode: str, *args: str) -> None:
+    with satellites():
+        with telescope_server(telescope_protocol, mount_mode):
+            nexplane_maybe_hootl(False, telescope_protocol, mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
 
-def nexplane_with_skywatcher_wifi(mount_mode, *args):
-    with bg(['./skywatcher_wifi_hootl.py', SCOPE_PORT]):
-        nexplane_maybe_hootl(False, 'skywatcher-mount-head-wifi', mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
+def nexplane_with_skywatcher_wifi(mount_mode: str, *args: str) -> None:
+    with satellites():
+        with bg(['./skywatcher_wifi_hootl.py', SCOPE_PORT]):
+            nexplane_maybe_hootl(False, 'skywatcher-mount-head-wifi', mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
 
-def test(test_num, description, function, *args, **kwargs):
+def test(test_num: int, description: Any, function: Any, *args: Any, **kwargs: Any) -> None:
     print()
     print()
     print(f'TEST {test_num}: {description}')
-    with satellites():
-        function(*args, **kwargs)
+    function(*args, **kwargs)
 
 TESTS = [
+    [0, 'MyPy', run_mypy],
+
     [1, 'NexStar mount in Alt-Az mode',
      nexplane, 'nexstar-hand-control', 'altaz'],
 
@@ -102,10 +126,10 @@ TESTS = [
      nexplane_with_skywatcher_wifi, 'altaz'],
 ]
 
-def main():
+def main() -> None:
     tests_to_run = set(map(int, sys.argv[1:]))
     for test_spec in TESTS:
-        n = test_spec[0]
+        n = assert_int(test_spec[0])
         if tests_to_run and n not in tests_to_run:
             continue
         test(n, *test_spec[1:])

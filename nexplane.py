@@ -2,6 +2,7 @@
 
 '''The main application for tracking airplanes and satellites with a NexStar telescope.'''
 
+import argparse
 import math
 import numpy
 import sys
@@ -11,6 +12,8 @@ import traceback
 import astropy.time
 import astropy.coordinates as coords
 import astropy.units as units
+
+from typing import Any
 
 import astronomical
 import config
@@ -23,13 +26,15 @@ import sbs1
 import tracker
 import util
 
-def azm_alt_ang_dist(aa1, aa2):
+from util import unwrap
+
+def azm_alt_ang_dist(aa1: tuple[float, float], aa2: tuple[float, float]) -> float:
     '''Compute the angle in the sky between two azimuth/elevation directions.'''
     ned1 = util.aer_to_ned(aa1[0], aa1[1], 1.0)
     ned2 = util.aer_to_ned(aa2[0], aa2[1], 1.0)
     return math.acos(numpy.dot(ned1, ned2))
 
-def parse_args_and_config():
+def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
     parser, config_data = config.get_arg_parser_and_config_data(
         description='Helps you track airplanes and satellites with a Celestron '
@@ -105,7 +110,7 @@ def parse_args_and_config():
 
     return args, config_data
 
-def main():
+def main() -> None:
     args, config_data = parse_args_and_config()
 
     # Where are we?
@@ -121,9 +126,10 @@ def main():
         if args.telescope_protocol == 'nexstar-hand-control':
             current_time = util.get_current_time()
 
-            serial_iface = nexstar.NexStarSerialHootl(current_time=current_time,
-                                                      observatory_location=observatory_location,
-                                                      altaz_mode=(args.mount_mode == 'altaz'))
+            serial_iface: mount_base.Client = nexstar.NexStarSerialHootl(
+                current_time=current_time,
+                observatory_location=observatory_location,
+                altaz_mode=(args.mount_mode == 'altaz'))
         else:
             assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
             serial_iface = skywatcher.SkyWatcherSerialHootl()
@@ -148,7 +154,7 @@ def main():
         try:
             # Telescope control interface.
             if args.telescope_protocol == 'nexstar-hand-control':
-                telescope = nexstar.NexStar(serial_iface)
+                telescope: mount_base.Mount = nexstar.NexStar(serial_iface)
             else:
                 assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
                 telescope = skywatcher.SkyWatcher(serial_iface)
@@ -234,8 +240,8 @@ def main():
 
                     # Send new data to the to GUI so it can update the drawing.
                     gui_iface.provide_update(scope_azm_alt=scope_azm_alt,
-                                             sun_azm_alt=sun.az_el(),
-                                             moon_azm_alt=moon.az_el(),
+                                             sun_azm_alt=unwrap(sun.az_el()),
+                                             moon_azm_alt=unwrap(moon.az_el()),
                                              airplanes=planes)
 
                     # Receive new user inputs from the GUI.
@@ -247,7 +253,7 @@ def main():
                         target_tracker.set_gains(kp, ki, kd)
                     last_gain_changes = gain_changes
 
-                    if azm_alt_ang_dist(scope_azm_alt, sun.az_el()) < 20/180*math.pi:
+                    if azm_alt_ang_dist(scope_azm_alt, unwrap(sun.az_el())) < 20/180*math.pi:
                         # We've strayed into the keep out circle around the Sun! Emergency Stop!
                         # The user can fix this with the hand controller.
                         target_tracker.stop()
@@ -261,12 +267,12 @@ def main():
 
                         # Inform the target tracker of the target position and the current position of the telescope.
                         if args.mount_mode == 'altaz':
-                            target_tracker.go(util.wrap_rad(tracked_plane.az.value + az_offset - azm_cal, scope_azm_raw - math.pi),
-                                              util.wrap_rad(tracked_plane.el.value + el_offset - alt_cal, scope_alt_raw - math.pi))
+                            target_tracker.go(util.wrap_rad(unwrap(tracked_plane.az.value) + az_offset - azm_cal, scope_azm_raw - math.pi),
+                                              util.wrap_rad(unwrap(tracked_plane.el.value) + el_offset - alt_cal, scope_alt_raw - math.pi))
                         else:
                             tracked_plane_ra, tracked_plane_dec = util.altaz_to_radec(
-                                tracked_plane.el.value + el_offset,
-                                tracked_plane.az.value + az_offset,
+                                unwrap(tracked_plane.el.value) + el_offset,
+                                unwrap(tracked_plane.az.value) + az_offset,
                                 observatory_location,
                                 util.get_current_time())
                             target_tracker.go(tracked_plane_ra - ra_cal, tracked_plane_dec - dec_cal)

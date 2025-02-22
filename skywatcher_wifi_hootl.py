@@ -6,7 +6,7 @@ import sys
 
 import skywatcher
 
-def main():
+def main() -> None:
     server = skywatcher.SkyWatcherUdpServerHootl(int(sys.argv[1]))
     server.run()
 
