@@ -92,9 +92,9 @@ class Tracker:
         '''
         self.stopped = False
         if self.altaz_mode:
-            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_azm_alt()
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_azm_alt()
         else:
-            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_precise_ra_dec()
+            actual_azm_or_ra, actual_alt_or_dec = self.telescope.get_ra_dec()
         actual_azm_or_ra = util.wrap_rad(actual_azm_or_ra, target_azm_or_ra-math.pi)
         actual_alt_or_dec = util.wrap_rad(actual_alt_or_dec, target_alt_or_dec-math.pi)
         slew_rate_azm_or_ra = self.azm_or_ra_controller.control(target_azm_or_ra, actual_azm_or_ra)

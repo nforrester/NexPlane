@@ -501,14 +501,6 @@ class NexStar(Mount):
         return response
 
     def get_ra_dec(self) -> tuple[float, float]:
-        '''Return current Right Ascension and Declination of telescope in radians, with low precision.'''
-        r = self._speak('E', 9)
-        assert r[4] == ','
-        ra = b24_to_rad(from_hex(r[0:4]) << 8)
-        dec = b24_to_rad(from_hex(r[5:9]) << 8)
-        return ra, dec
-
-    def get_precise_ra_dec(self) -> tuple[float, float]:
         '''Return current Right Ascension and Declination of telescope in radians, with high precision.'''
         r = self._speak('e', 17)
         assert r[8] == ','
@@ -517,14 +509,6 @@ class NexStar(Mount):
         return ra, dec
 
     def get_azm_alt(self) -> tuple[float, float]:
-        '''Return current azimuth and elevation of telescope in radians, with low precision.'''
-        r = self._speak('Z', 9)
-        assert r[4] == ','
-        azm = b24_to_rad(from_hex(r[0:4]) << 8)
-        alt = b24_to_rad(from_hex(r[5:9]) << 8)
-        return azm, alt
-
-    def get_precise_azm_alt(self) -> tuple[float, float]:
         '''Return current azimuth and elevation of telescope in radians, with high precision.'''
         r = self._speak('z', 17)
         assert r[8] == ','

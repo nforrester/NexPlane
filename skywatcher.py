@@ -537,13 +537,13 @@ class SkyWatcher(Mount):
             return position
         raise CommError('New position seems wrong: ' + r)
 
-    def get_precise_ra_dec(self) -> tuple[float, float]:
+    def get_ra_dec(self) -> tuple[float, float]:
         # TODO DOC ME
         ra = -self._inquire_position(1)
         dec = self._inquire_position(2)
         return ra, dec
 
-    def get_precise_azm_alt(self) -> tuple[float, float]:
+    def get_azm_alt(self) -> tuple[float, float]:
         # TODO DOC ME
         azm = self._inquire_position(1)
         alt = self._inquire_position(2)

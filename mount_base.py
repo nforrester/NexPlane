@@ -38,14 +38,14 @@ class Mount(ABC):
     typically radians or radians per second.'''
 
     @abstractmethod
-    def get_precise_ra_dec(self) -> tuple[float, float]:
+    def get_ra_dec(self) -> tuple[float, float]:
         '''Return (RA, Dec).
 
         May not be properly aligned.
         May not be valid if the telescope is in altaz mode.'''
 
     @abstractmethod
-    def get_precise_azm_alt(self) -> tuple[float, float]:
+    def get_azm_alt(self) -> tuple[float, float]:
         '''Return (Azm, Alt). Might not be properly aligned.
 
         May not be properly aligned.
