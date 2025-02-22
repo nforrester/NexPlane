@@ -1,8 +1,29 @@
 '''
 This file implements the Sky-Watcher Motor Controller Command Set documented in
 https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf
+
+The main class here is SkyWatcher, which contains all the business logic for encoding
+requests to the telescope and decoding responses, and presents a nice interface to
+the rest of the program. When you construct a SkyWatcher object you must pass an
+object that can take those commands and actually talk to the telescope. This is
+useful because there are three different useful ways you might talk to the
+telescope:
+
+    SerialNetClient
+        The telescope is connected to a computer (possibly a different one).
+        Talk to it via an RPC server running on that computer.
+        See telescope_server.py.
+
+    SkyWatcherUdpClient
+        Communicates with the telescope directly over wifi, using Sky-Watcher's
+        protocol. This only works with mounts that have wifi of course, like the
+        AZ-GTi, or if you've got a SynScan WiFi Adapter.
+
+    SkyWatcherSerialHootl
+        A telescope simulator used for Hardware Out Of The Loop (HOOTL) testing.
+        This lets you test the software without the risk of damaging your telescope,
+        and without the trouble of setting it up.
 '''
-# TODO FINISH DOC ME
 
 import copy
 import math
