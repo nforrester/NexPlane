@@ -30,6 +30,8 @@ class TextServer:
                     conn.sendall(text.encode())
                 except BrokenPipeError:
                     del self.connections[idx]
+                except ConnectionResetError:
+                    del self.connections[idx]
                 idx += 1
 
     def _listen(self, port):
