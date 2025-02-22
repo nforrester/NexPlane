@@ -23,6 +23,8 @@ import termios
 import time
 import util
 
+import astropy.coordinates as coords
+
 from typing import Any
 
 import config
@@ -62,7 +64,7 @@ class Box:
     def __init__(self, x: Any):
         self.x = x
 
-def telescope_serial_udp_server(serial_port: str | None, net_port: int, telescope_protocol: str, observatory_location: Any, altaz_mode: bool) -> None: # TODO Any
+def telescope_serial_udp_server(serial_port: str | None, net_port: int, telescope_protocol: str, observatory_location: coords.EarthLocation, altaz_mode: bool) -> None:
     if serial_port is not None:
         print('Opening', serial_port)
         sys.stdout.flush()

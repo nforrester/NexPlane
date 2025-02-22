@@ -44,7 +44,7 @@ class Sat:
         self.model = Satrec.twoline2rv(one, two)
         self.catalog_num = one[3:8]
 
-    def earth_location(self, time: Any) -> Any: # TODO Any
+    def earth_location(self, time: astropy.time.Time) -> coords.EarthLocation:
         '''Compute the EarthLocation of the satellite at the given time.'''
         # I don't have a really great understanding of how this works.
         # I just hacked it together by looking at

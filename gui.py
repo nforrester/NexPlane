@@ -13,8 +13,6 @@ import sys
 import threading
 import time
 
-from typing import Any
-
 from OpenGL import setPlatform
 if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
     setPlatform('glx')
@@ -22,6 +20,8 @@ if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
 import OpenGL.GL as gl
 import OpenGL.GLU as glu
 import OpenGL.GLUT as glut
+
+import astropy.coordinates as coords
 
 import util
 from util import unwrap
@@ -34,7 +34,7 @@ class Exit(Exception):
 
 class Gui:
     '''Runs the GUI and provides the interface between it and the main thread.'''
-    def __init__(self, black_and_white: bool, white_bg: bool, kp: float, ki: float, kd: float, draw_eq_frame: bool, observatory_location: Any): # TODO Any
+    def __init__(self, black_and_white: bool, white_bg: bool, kp: float, ki: float, kd: float, draw_eq_frame: bool, observatory_location: coords.EarthLocation):
         self.black_and_white = black_and_white
         self.white_bg = white_bg
 
@@ -319,7 +319,7 @@ class Gui:
         # Update the screen.
         glut.glutSwapBuffers()
 
-    def _draw_text(self, x: float, y: float, text: str, font: Any = glut.GLUT_BITMAP_9_BY_15) -> None: # TODO Any
+    def _draw_text(self, x: float, y: float, text: str, font: int = glut.GLUT_BITMAP_9_BY_15) -> None:
         '''Draw some text at the given location on screen.'''
         gl.glRasterPos2f(x, y)
         glut.glutBitmapString(font, text.encode())

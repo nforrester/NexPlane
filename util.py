@@ -59,7 +59,7 @@ def normalize(v: numpy.ndarray) -> numpy.ndarray:
     norm = numpy.linalg.norm(v)
     return v / norm
 
-def ned_unit_vectors_at_earth_location(earth_location: Any) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]: # TODO Any
+def ned_unit_vectors_at_earth_location(earth_location: coords.EarthLocation) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     '''
     Determine the directions of North, East, and Down at the
     specified EarthLocations, in geocentric coordinates.
@@ -105,7 +105,7 @@ def ned_unit_vectors_at_earth_location(earth_location: Any) -> tuple[numpy.ndarr
 
     return n_unit, e_unit, d_unit
 
-def ned_between_earth_locations(to_loc: Any, from_loc: Any) -> numpy.ndarray: # TODO Any
+def ned_between_earth_locations(to_loc: coords.EarthLocation, from_loc: coords.EarthLocation) -> numpy.ndarray:
     '''Compute the position of to_loc in the NED frame of from_loc (both EarthLocation objects).'''
     # Find the position of to_loc relative to from_loc in the geocentric frame.
     f_gc = numpy.array([a.to(units.m).value for a in from_loc.to_geocentric()])
@@ -120,7 +120,7 @@ def ned_between_earth_locations(to_loc: Any, from_loc: Any) -> numpy.ndarray: # 
             numpy.dot(rel_gc, d_unit),
         ])
 
-def configured_earth_location(config_data: dict[str, Any], name: str) -> Any: # TODO Any
+def configured_earth_location(config_data: dict[str, Any], name: str) -> coords.EarthLocation:
     '''Return an EarthLocation for the requested location from the provided config data.'''
     lat = config_data['locations'][name]['lat_degrees']
     lon = config_data['locations'][name]['lon_degrees']
@@ -131,7 +131,7 @@ def get_current_time() -> astropy.time.Time:
     '''Get the current time as an astropy.time.Time object.'''
     return astropy.time.Time(time.time(), format='unix')
 
-def altaz_to_radec(alt: float, azm: float, observatory_location: Any, current_time: astropy.time.Time) -> tuple[float, float]: # TODO Any
+def altaz_to_radec(alt: float, azm: float, observatory_location: coords.EarthLocation, current_time: astropy.time.Time) -> tuple[float, float]:
     '''Converts alt/az coordinates to ra/dec coordinates.'''
     # Get an astropy.coordinates.AltAz and astropy.coordinates.SkyCoord
     # corresponding to the given alt and azm.
@@ -148,7 +148,7 @@ def altaz_to_radec(alt: float, azm: float, observatory_location: Any, current_ti
 
     return ra, dec
 
-def radec_to_altaz(ra: float, dec: float, observatory_location: Any, current_time: astropy.time.Time) -> tuple[float, float]:
+def radec_to_altaz(ra: float, dec: float, observatory_location: coords.EarthLocation, current_time: astropy.time.Time) -> tuple[float, float]:
     '''Converts ra/dec coordinates to alt/az coordinates.'''
     sky_coord = coords.SkyCoord(ra=ra*units.rad, dec=dec*units.rad)
     alt_az = sky_coord.transform_to(coords.AltAz(obstime=current_time, location=observatory_location))

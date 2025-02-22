@@ -61,7 +61,7 @@ class TimestampedDatum[T]:
         self.min_time_ns = time_ns
         self.max_time_ns = time_ns
 
-    def set_times_from(self, others: list[Any]) -> None: # TODO Any
+    def set_times_from(self, others: list[Any]) -> None:
         '''
         Set the receipt time range of this data point to encompass the time ranges of
         several others. This is useful when calculating derived or composite data.
@@ -177,7 +177,7 @@ class Sbs1Receiver:
     servers and turn it into a continuously updated dict of Airplane objects that can
     be accessed from the main thread by calling self.get_planes().
     '''
-    def __init__(self, plane_servers: list[str], observatory: Any): # TODO Any
+    def __init__(self, plane_servers: list[str], observatory: coords.EarthLocation):
         '''Start all the threads and processes that do the work.'''
         # For each server, start a new multiprocessing.Process to receive data from it.
         # Each process has an associated multiprocessing.Queue to emit data
@@ -400,7 +400,7 @@ def receive_data(plane_server: str, out_q: 'multiprocessing.Queue[RawAirplane]')
             if airplane.complete_data():
                 out_q.put(airplane)
 
-def compute_airplane(observatory: Any, raw_plane: RawAirplane) -> Airplane: # TODO Any
+def compute_airplane(observatory: coords.EarthLocation, raw_plane: RawAirplane) -> Airplane:
     '''Turn a RawAirplane into an Airplane.'''
     assert raw_plane.complete_data()
 
@@ -462,7 +462,7 @@ def compute_airplane(observatory: Any, raw_plane: RawAirplane) -> Airplane: # TO
 
     return plane
 
-def compute_airplanes(observatory: Any, in_qs: list['multiprocessing.Queue[RawAirplane]'], out_q: 'multiprocessing.Queue[Airplane]') -> None: # TODO Any
+def compute_airplanes(observatory: coords.EarthLocation, in_qs: list['multiprocessing.Queue[RawAirplane]'], out_q: 'multiprocessing.Queue[Airplane]') -> None:
     '''Process that filters RawAirplane data and produces Airplane objects.'''
     # Contains up to date Airplane objects for all planes we've seen.
     computed_airplanes: dict[str, Airplane] = dict()

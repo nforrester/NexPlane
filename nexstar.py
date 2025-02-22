@@ -28,8 +28,6 @@ import sys
 import threading
 import time
 
-from typing import Any
-
 import astropy.time
 import astropy.coordinates as coords
 import astropy.units as units
@@ -119,7 +117,7 @@ class NexStarSerialHootl(Client):
 
     The simulator runs in a separate thread.
     '''
-    def __init__(self, current_time: astropy.time.Time, observatory_location: Any, altaz_mode: bool): # TODO Any
+    def __init__(self, current_time: astropy.time.Time, observatory_location: coords.EarthLocation, altaz_mode: bool):
         '''
         current_time should be an astropy.time.Time.
 
@@ -139,7 +137,7 @@ class NexStarSerialHootl(Client):
         self.state_time = int(current_time.to_value('gps') * 1e9) # Integer nanoseconds since gps epoch.
         self.state_timestep = int(0.10 * 1e9) # Integer nanoseconds to advance per simulation step.
 
-        self.tracked_sky_coord: Any | None = None # TODO Any
+        self.tracked_sky_coord: coords.SkyCoord | None = None
 
         # Interface variables, shared between main and simulator thread.
         self.iface_meas_azm = 0 # 24 bit integer
