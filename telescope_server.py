@@ -20,9 +20,13 @@ import serial
 import sys
 import termios
 import time
+import util
 
 import config
 import rpc
+
+from nexstar import NexStarSerialHootl
+from skywatcher import SkyWatcherSerialHootl
 
 def process_response(response, telescope_protocol):
     if telescope_protocol == 'nexstar-hand-control':
@@ -55,9 +59,10 @@ class Box:
     def __init__(self, x):
         self.x = x
 
-def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
-    print('Opening', serial_port)
-    sys.stdout.flush()
+def telescope_serial_udp_server(serial_port, net_port, telescope_protocol, observatory_location, altaz_mode):
+    if serial_port is not None:
+        print('Opening', serial_port)
+        sys.stdout.flush()
 
     if telescope_protocol == 'nexstar-hand-control':
         baud_rate = 9600
@@ -72,7 +77,16 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
 
     telescope = Box(None)
     def init_port():
-        telescope.x = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
+        if serial_port is None:
+            if telescope_protocol == 'nexstar-hand-control':
+                telescope.x = NexStarSerialHootl(current_time=util.get_current_time(),
+                                                 observatory_location=observatory_location,
+                                                 altaz_mode=altaz_mode)
+            else:
+                assert telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod']
+                telescope.x = SkyWatcherSerialHootl()
+        else:
+            telescope.x = serial.Serial(port=serial_port, baudrate=baud_rate, timeout=0)
     init_port()
     def reinit_port():
         telescope.x.close()
@@ -80,10 +94,18 @@ def telescope_serial_udp_server(serial_port, net_port, telescope_protocol):
 
     def speak(line):
         try:
-            telescope.x.reset_input_buffer()
-            telescope.x.write((line + line_ending).encode(encoding='ISO-8859-1'))
+            if serial_port is not None:
+                telescope.x.reset_input_buffer()
+                telescope.x.write((line + line_ending).encode(encoding='ISO-8859-1'))
+                response = read_response(telescope.x, telescope_protocol)
+            else:
+                response = telescope.x.speak(line)
+                if telescope_protocol == 'nexstar-hand-control':
+                    response = response + '#'
+                else:
+                    assert telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod']
+                    response = '=' + response + '\r'
 
-            response = read_response(telescope.x, telescope_protocol)
             processed = process_response(response, telescope_protocol)
             if processed is None:
                 return (False, response)
@@ -114,6 +136,17 @@ def parse_args_and_config():
         description='Exposes the telescope serial interface on the network.')
 
     parser.add_argument(
+        '--hootl', dest='run_hootl', action='store_true',
+        help='Do not connect to a telescope via a serial port, but instead run an '
+             'internal simulation of the telescope. This is useful for testing.' +
+             (' This is the default' if config_data['hootl'] else ''))
+    parser.add_argument(
+        '--no-hootl', dest='run_hootl', action='store_false',
+        help='Opposite of --hootl.' +
+             (' This is the default' if not config_data['hootl'] else ''))
+    parser.set_defaults(run_hootl=config_data['hootl'])
+
+    parser.add_argument(
         '--serial-port', default=config_data['serial_port'],
         help='Which serial port to use (default: ' +
              ('the first port it finds between /dev/ttyUSB0 and /dev/ttyUSB9.'
@@ -127,24 +160,46 @@ def parse_args_and_config():
         '--telescope-protocol', type=str, default=config_data['telescope_protocol'],
         help='Which protocol to use to talk to the telescope (default: {})'.format(config_data['telescope_protocol']))
 
+    parser.add_argument(
+        '--location', type=str, default=config_data['location'],
+        help='Where are you? Pick a named location from your config file '
+             '(default: ' + config_data['location'] + ')')
+
+    parser.add_argument(
+        '--mount-mode', type=str, default=config_data['mount_mode'],
+        help='Type of telescope mount, either altaz or eq. Default: {}'.format(
+            config_data['mount_mode']
+        )
+    )
+
     return parser.parse_args(), config_data
 
 def main():
     args, config_data = parse_args_and_config()
 
-    serial_port = args.serial_port
-    if serial_port == 'auto':
+    if args.run_hootl:
+        observatory_location = util.configured_earth_location(config_data, args.location)
         serial_port = None
-        for i in range(10):
-            this_port = f'/dev/ttyUSB{i}'
-            if os.path.exists(this_port):
-                serial_port = this_port
-                break
-        if serial_port is None:
-            print('Unable to find serial port for telescope.')
-            sys.stdout.flush()
-            sys.exit(1)
-    telescope_serial_udp_server(serial_port, args.network_port, args.telescope_protocol)
+    else:
+        observatory_location = None
+        serial_port = args.serial_port
+        if serial_port == 'auto':
+            serial_port = None
+            for i in range(10):
+                this_port = f'/dev/ttyUSB{i}'
+                if os.path.exists(this_port):
+                    serial_port = this_port
+                    break
+            if serial_port is None:
+                print('Unable to find serial port for telescope.')
+                sys.stdout.flush()
+                sys.exit(1)
+    telescope_serial_udp_server(
+        serial_port,
+        args.network_port,
+        args.telescope_protocol,
+        observatory_location,
+        (args.mount_mode == 'altaz'))
 
 if __name__ == '__main__':
     main()

@@ -15,6 +15,7 @@ import astropy.units as units
 import astronomical
 import config
 import gui
+import mount_base
 import nexstar
 import rpc
 import skywatcher
@@ -130,7 +131,7 @@ def main():
         if args.telescope_protocol == 'skywatcher-mount-head-wifi':
             serial_iface = skywatcher.SkyWatcherUdpClient(args.telescope)
         else:
-            serial_iface = nexstar.SerialNetClient(args.telescope)
+            serial_iface = mount_base.SerialNetClient(args.telescope)
 
     # Receive airplane data.
     sbs1_receiver = sbs1.Sbs1Receiver(args.sbs1, observatory_location)

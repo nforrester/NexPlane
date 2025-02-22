@@ -34,7 +34,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from nexstar import SerialNetClient, CommError, speak_delay
+from mount_base import CommError, speak_delay
 
 class UnreliableCommError(Exception):
     '''Raised when the telescope does not respond, but this may be a fluke.'''
@@ -61,8 +61,6 @@ class SkyWatcherUdpClient:
                 break
 
         # Transmit our command.
-        # TODO REMOVE PRINT
-        print(time.time(), line)
         self.sock.sendto((line + '\r').encode(), self.host_port)
 
         # Await a reply, timing out at failure_time.
@@ -75,8 +73,6 @@ class SkyWatcherUdpClient:
                 data, _ = self.sock.recvfrom(10000)
                 # decode it,
                 response = data.decode()
-                # TODO REMOVE PRINT
-                print(time.time(), response)
                 # parse it,
                 if len(response) == 0:
                     raise CommError(repr(response))
@@ -100,6 +96,7 @@ class SkyWatcherUdpServerHootl:
         self.sock.bind(('0.0.0.0', int(port)))
 
         self.simulator = SkyWatcherSerialHootl()
+        self.txn_count = 0
 
     def run(self):
         while True:
@@ -112,13 +109,14 @@ class SkyWatcherUdpServerHootl:
 
                 response = self.simulator.speak(command[:-1])
 
-                # Drop packets with 1% probability.
-                if random.random() < 0.01:
-                    continue
-
-                # Delay packets with 1% probability.
-                if random.random() < 0.01:
-                    time.sleep(0.5 * random.random())
+                if self.txn_count > 100:
+                    # Drop packets with 1% probability.
+                    if random.random() < 0.01:
+                        continue
+                    # Delay packets with 1% probability.
+                    if random.random() < 0.01:
+                        time.sleep(0.5 * random.random())
+                self.txn_count += 1
 
                 self.sock.sendto(('=' + response + '\r').encode(), (host, port))
 

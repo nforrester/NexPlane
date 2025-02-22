@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# TODO DOC ME
+'''Run a SkyWatcherUdpServerHootl for testing purposes.'''
 
 import sys
 
