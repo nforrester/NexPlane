@@ -32,6 +32,8 @@ class Exit(Exception):
     '''Thrown in the main thread when the GUI thread stops, probably because somebody closed the window.'''
     pass
 
+Color = tuple[float, float, float]
+
 class Gui:
     '''Runs the GUI and provides the interface between it and the main thread.'''
     def __init__(self, black_and_white: bool, white_bg: bool, kp: float, ki: float, kd: float, draw_eq_frame: bool, observatory_location: coords.EarthLocation):
@@ -210,6 +212,7 @@ class Gui:
                 untracked_space_projected_color  = all_black
                 horizon_color                    = all_black
                 eq_frame_color                   = all_black
+                eq_frame_second_color            = (0.7, 0.7, 0.7)
                 tracked_last_known_color         = all_black
                 tracked_projected_color          = all_black
                 moon_color                       = all_black
@@ -225,6 +228,7 @@ class Gui:
                 untracked_space_projected_color  = all_white
                 horizon_color                    = all_white
                 eq_frame_color                   = all_white
+                eq_frame_second_color            = (0.2, 0.2, 0.2)
                 tracked_last_known_color         = all_white
                 tracked_projected_color          = all_white
                 moon_color                       = all_white
@@ -238,6 +242,9 @@ class Gui:
                 untracked_space_last_known_color = (0.0, 0.0, 0.0) # Black
                 untracked_space_projected_color  = (0.3, 0.3, 0.3) # Dark gray
 
+                eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
+                eq_frame_second_color            = (1.0, 0.8, 1.0) # Pink
+
             else:
                 sun_color  = (1.0, 1.0, 0.0) # Bright yellow
                 moon_color = (0.8, 0.8, 0.8) # Gray
@@ -245,11 +252,13 @@ class Gui:
                 untracked_space_last_known_color = (0.8, 0.8, 0.8) # Gray
                 untracked_space_projected_color  = (1.0, 1.0, 1.0) # White
 
+                eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
+                eq_frame_second_color            = (0.2, 0.1, 0.2) # Dark Purple
+
             telescope_color                  = (1.0, 0.0, 0.0) # Red
             untracked_atmos_last_known_color = (0.4, 0.4, 1.0) # Dark blue
             untracked_atmos_projected_color  = (0.6, 0.6, 1.0) # Light blue
             horizon_color                    = (0.2, 0.6, 0.2) # Green
-            eq_frame_color                   = (0.9, 0.3, 1.0) # Purple
             tracked_last_known_color         = (1.0, 0.4, 0.4) # Dark orange
             tracked_projected_color          = (1.0, 0.6, 0.6) # Light orange
             warn_color                       = (1.0, 0.0, 0.0) # Red
@@ -258,7 +267,7 @@ class Gui:
         self._draw_horizon(horizon_color)
 
         if self.draw_eq_frame:
-            self._draw_eq_frame(eq_frame_color)
+            self._draw_eq_frame(eq_frame_color, eq_frame_second_color)
 
         # Radius of the telescope field of view, in radians.
         # The present value is a bit high for my scope,
@@ -324,7 +333,7 @@ class Gui:
         gl.glRasterPos2f(x, y)
         glut.glutBitmapString(font, text.encode())
 
-    def _draw_horizon(self, color: tuple[float, float, float]) -> None:
+    def _draw_horizon(self, color: Color) -> None:
         '''Draw the horizon and axis labels.'''
         x1, y1 = self._azm_alt_to_x_y(0, 0)
         x2, y2 = self._azm_alt_to_x_y(1.999*math.pi, 0)
@@ -346,7 +355,7 @@ class Gui:
             x, y = self._azm_alt_to_x_y(math.pi, alt/180*math.pi)
             self._draw_text(x - 5, y - font_offset, str(alt))
 
-    def _draw_eq_frame(self, color: tuple[float, float, float]) -> None:
+    def _draw_eq_frame(self, color: Color, secondary_color: Color) -> None:
         '''Draw the equatorial frame.'''
         current_time = util.get_current_time()
 
@@ -365,7 +374,6 @@ class Gui:
         self._draw_sky_circle(color, math.pi/2, north_pole_azm, north_pole_alt)
 
         # Draw some dec lines
-        secondary_color = (color[0] * 0.2, color[1] * 0.2, color[2] * 0.2) # TODO make this handle whitebg
         for normal_ra in [0, math.pi/4, math.pi/2, -math.pi/4]:
             dec_line_normal_alt, dec_line_normal_azm = util.radec_to_altaz(normal_ra, 0, self.observatory_location, current_time)
             self._draw_sky_circle(secondary_color, math.pi/2, dec_line_normal_azm, dec_line_normal_alt)
@@ -374,7 +382,7 @@ class Gui:
         for dec_radius in [math.pi/8, math.pi/4, 3*math.pi/8, 5*math.pi/8, 3*math.pi/4, 7*math.pi/8]:
             self._draw_sky_circle(secondary_color, dec_radius, north_pole_azm, north_pole_alt)
 
-    def _draw_marker(self, color: tuple[float, float, float], radius: float, azm: float, alt: float, label: str = '') -> None:
+    def _draw_marker(self, color: Color, radius: float, azm: float, alt: float, label: str = '') -> None:
         '''Draw a marker on the screen.
 
         color    The color of the marker.
@@ -398,7 +406,7 @@ class Gui:
         if label != '':
             self._draw_text(x+4, y-4, label)
 
-    def _draw_sky_circle(self, color: tuple[float, float, float], angular_radius: float, center_azm: float, center_alt: float) -> None:
+    def _draw_sky_circle(self, color: Color, angular_radius: float, center_azm: float, center_alt: float) -> None:
         '''Draw a circle on the sky, and project it onto the screen using the equiangular projection.
 
         color           The color of the circle
