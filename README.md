@@ -60,6 +60,15 @@ Quick summary of new features:
   to a "landmark" in the sky. To align on Jupiter, specify `--landmark sky:jupiter`. To align
   on Sirius, specify `--landmark sky:sirius`. Aligning on bodies outside the solar system
   requires an internet connection.
+- The HOOTL simulator can now optionally be run inside the telescope server, or in the new
+  `skywatcher_wifi_hootl.py` server, instead of inside `nexplane.py`. This allows end-to-end
+  testing of the network stack. This has given `telescope_server.py` some new options.
+- A new `run_test.py` script can run a useful battery of tests on NexPlane.
+- Compatibility with Python 3.9 and earlier is officially broken. I have not tested Python3.10.
+  Python3.11 and later are supported.
+- Network robustness is improved, and there's a warning in red text in the middle of the
+  screen when communication failures are detected.
+- Trackable targets are now displayed in gray if they're in space.
 
 # NexPlane
 
