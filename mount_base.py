@@ -107,6 +107,8 @@ class SerialNetClient(Client):
 
         if not success:
             raise CommError(repr(value))
+
+        assert isinstance(value, str)
         return value
 
     def close(self) -> None:

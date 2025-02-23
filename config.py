@@ -43,6 +43,7 @@ def read_config(extra_configs: list[str]) -> dict[str, Any]:
         with open(filename) as f:
             data = merge_config(data, yaml.load(f.read(), yaml.Loader))
 
+    assert isinstance(data, dict)
     return data
 
 def get_arg_parser_and_config_data(*args: Any, **kwargs: Any) -> tuple[argparse.ArgumentParser, dict[str, Any]]:

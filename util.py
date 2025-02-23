@@ -57,7 +57,9 @@ def aer_to_ned(a: float, e: float, r: float) -> numpy.ndarray:
 def normalize(v: numpy.ndarray) -> numpy.ndarray:
     '''Return the vector, but scaled to length 1.'''
     norm = numpy.linalg.norm(v)
-    return v / norm
+    result = v / norm
+    assert isinstance(result, numpy.ndarray)
+    return result
 
 def ned_unit_vectors_at_earth_location(earth_location: coords.EarthLocation) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     '''
