@@ -278,6 +278,15 @@ class Gui:
         self._draw_marker(telescope_color, view_radius, scope_azm, scope_alt)
         self._draw_sky_circle(telescope_color, 1/180*math.pi, scope_azm, scope_alt)
 
+        # Label the back of the telescope if NexPlane thinks its pointing at the ground,
+        # because the user may be confused.
+        if util.wrap_rad(scope_alt, -math.pi) < 0:
+            back_azm = util.wrap_rad(scope_azm + math.pi, 0)
+            back_alt = util.wrap_rad(-scope_alt, -math.pi)
+            self._draw_marker(telescope_color, view_radius, back_azm, back_alt)
+            x, y = self._azm_alt_to_x_y(back_azm, back_alt)
+            self._draw_text(x+5, y+5, 'Back of telescope.')
+
         # Draw the Moon.
         sun_moon_angular_radius = 0.26/180*math.pi
         self._draw_marker(moon_color, sun_moon_angular_radius, moon_azm, moon_alt, 'Moon')

@@ -69,6 +69,7 @@ Quick summary of new features:
 - Network robustness is improved, and there's a warning in red text in the middle of the
   screen when communication failures are detected.
 - Trackable targets are now displayed in gray if they're in space.
+- The back of the telescope will be illustrated if the telescope is pointed at the ground.
 
 # NexPlane
 
