@@ -43,9 +43,16 @@ class UnreliableCommError(Exception):
     pass
 
 class SkyWatcherUdpClient(Client):
-    # TODO DOC ME
+    '''
+    Communicates with the telescope directly over wifi, using Sky-Watcher's
+    protocol. This only works with mounts that have wifi of course, like the
+    AZ-GTi, or if you've got a SynScan WiFi Adapter.
+    '''
     def __init__(self, host_port: str):
-        # TODO DOC ME
+        '''
+        The argument is a string with the hostname or IP address of the mount head,
+        and the port number to connect to, separated by a colon. For example, '192.168.4.1:11880'.
+        '''
         host, port = host_port.split(':')
         self.host_port = (host, int(port))
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -53,6 +60,10 @@ class SkyWatcherUdpClient(Client):
         self.sock.bind(('0.0.0.0', int(port)+1))
 
     def speak(self, line: str) -> str:
+        '''
+        Send the telescope a command, and return its response
+        (without the leading '=' or trailing '\r').
+        '''
         # Consume any trash data in the receive buffer that's obviously not
         # a response to the command we're about to issue.
         while True:
@@ -90,9 +101,15 @@ class SkyWatcherUdpClient(Client):
 
 
 class SkyWatcherUdpServerHootl:
-    # TODO DOC ME
+    '''
+    Wraps a SkyWatcherSerialHootl and acts like a WiFi-enabled
+    Sky-Watcher mount head on the network. It deliberately
+    drops and delays packets like the real thing (though hopefully
+    more often than the real thing), so that the responses to these
+    bad behaviors can be tested.
+    '''
     def __init__(self, port: int):
-        # TODO DOC ME
+        '''Listen on the specified port.'''
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(1.0)
         self.sock.bind(('0.0.0.0', port))
@@ -101,6 +118,7 @@ class SkyWatcherUdpServerHootl:
         self.txn_count = 0
 
     def run(self) -> None:
+        '''Run the server.'''
         while True:
             ready, _, _ = select.select([self.sock], [], [], 1.0)
             if ready:
@@ -125,7 +143,7 @@ class SkyWatcherUdpServerHootl:
 
 @dataclass
 class AxisStatus:
-    # TODO DOC ME
+    '''Parsed response to a status inquiry about a particular axis.'''
     tracking: bool
     ccw: bool
     fast: bool
@@ -135,7 +153,13 @@ class AxisStatus:
     level_switch_on: bool
 
 class SkyWatcherSerialHootl(Client):
-    # TODO DOC ME
+    '''
+    A telescope simulator used for Hardware Out Of The Loop (HOOTL) testing.
+    This lets you test the software without the risk of damaging your telescope,
+    and without the trouble of setting it up.
+
+    The simulator runs in a separate thread.
+    '''
     def __init__(self) -> None:
         # Configuration
         self.cpr = 9216000
@@ -355,51 +379,70 @@ class SkyWatcherSerialHootl(Client):
         raise Exception('Invalid or unimplemented command: "{}"'.format(repr(command)))
 
 def encode_int_2(v: int) -> str:
-    # TODO DOC ME
+    '''Encode an integer as 2 hex digits.'''
     h = format(v, '02X')
     assert len(h) == 2, v
     return h
 
 def decode_int_2(s: str) -> int:
-    # TODO DOC ME
+    '''Decode an integer from 2 hex digits.'''
     assert len(s) == 2, s
     return int(s, 16)
 
 def encode_int_4(v: int) -> str:
-    # TODO DOC ME
+    '''Encode an integer as 4 hex digits, with the bytes backwards.'''
     h = format(v, '04X')
     assert len(h) == 4, v
     return h[2:4] + h[0:2]
 
 def decode_int_4(s:str) -> int:
-    # TODO DOC ME
+    '''Decode an integer from 4 hex digits, with the bytes backwards.'''
     assert len(s) == 4, s
     h = s[2:4] + s[0:2]
     return int(h, 16)
 
 def encode_int_6(v: int) -> str:
-    # TODO DOC ME
+    '''Encode an integer as 6 hex digits, with the bytes backwards.'''
     h = format(v, '06X')
     assert len(h) == 6, v
     return h[4:6] + h[2:4] + h[0:2]
 
 def decode_int_6(s:str) -> int:
-    # TODO DOC ME
+    '''Decode an integer from 6 hex digits, with the bytes backwards.'''
     assert len(s) == 6, s
     h = s[4:6] + s[2:4] + s[0:2]
     return int(h, 16)
 
 class PositionFilter:
-    # TODO DOC ME
+    '''
+    Simple Kalman-inspired filter that tries to reject sudden changes
+    in a floating point value, while accepting the possibility that those
+    changes may sometimes happen legitimately.
+    '''
     def __init__(self, label: str):
+        # If we think we've locked onto the real value, this is it.
         self.locked_position: float | None = None
+
+        # This is when self.locked_position was last updated.
         self.locked_update_time = float('-inf')
+
+        # If we've detected a discontinuity in the sensed value,
+        # this is where the sensor is now claiming as true.
         self.proposed_position: float | None = None
+
+        # How long has the sensor been self-consistent, but disagreed
+        # with self.locked_position? If it goes on long enough, we'll
+        # accept the new self.proposed_position and lock it in.
         self.proposed_persistence = 0
+
+        # Label for debugging prints.
         self.label = label
 
     def update(self, new_position: float) -> bool:
-        # TODO DOC ME
+        '''
+        Update the filter with a new sensed value.
+        Return True if the filter believes the new value is legit.
+        '''
         now = time.time()
         time_tol = 1.5
         max_degrees_per_second = 5.3
@@ -410,14 +453,12 @@ class PositionFilter:
                 if abs(new_position - self.proposed_position) < pos_tol:
                     self.proposed_persistence += 1
                 else:
-                    # TODO REMOVE PRINT
                     print(now, self.label, 'Reset proposed lock.')
                     self.proposed_persistence = 0
             self.proposed_position = new_position
 
             # Accept the new lock if the proposed lock is persistent.
             if self.proposed_persistence > 40:
-                # TODO REMOVE PRINT
                 print(now, self.label, 'Accept proposed lock.')
                 self.locked_position = new_position
                 self.locked_update_time = now
@@ -495,11 +536,11 @@ class SkyWatcher(Mount):
         return response
 
     def _initialization_done(self, axis: int) -> None:
-        # TODO DOC ME
+        '''Declare this axis to have completed initialization.'''
         self._speak(':F' + str(axis), 0)
 
     def _inquire_status(self, axis: int) -> AxisStatus:
-        # TODO DOC ME
+        '''Ask about the status of this axis.'''
         r = self._speak(':f' + str(axis), 3)
         assert len(r) == 3
         value = int(r, 16)
@@ -514,22 +555,22 @@ class SkyWatcher(Mount):
         )
 
     def _inquire_counts_per_revolution(self, axis: int) -> int:
-        # TODO DOC ME
+        '''How many position counts correspond to a full revolution of this axis?'''
         r = self._speak(':a' + str(axis), 6)
         return decode_int_6(r)
 
     def _inquire_high_speed_ratio(self, axis: int) -> int:
-        # TODO DOC ME
+        '''How many steps will the axis take per timer interrupt?'''
         r = self._speak(':g' + str(axis), 2)
         return decode_int_2(r)
 
     def _inquire_timer_freq(self) -> int:
-        # TODO DOC ME
+        '''How fast is the clock driving the timer interrupt, in Hertz?'''
         r = self._speak(':b1', 6)
         return decode_int_6(r)
 
     def _inquire_position(self, axis: int) -> float:
-        # TODO DOC ME
+        '''Where is the axis, in radians?'''
         r = self._speak(':j' + str(axis), 6)
         v = decode_int_6(r)
         position = v / self.cpr[axis] * 2 * math.pi
@@ -538,18 +579,29 @@ class SkyWatcher(Mount):
         raise CommError('New position seems wrong: ' + r)
 
     def get_ra_dec(self) -> tuple[float, float]:
-        # TODO DOC ME
+        '''
+        Where is the telescope pointing, in RA/Dec, in radians?
+        Result is invalid unless the mount is equatorial.
+        RA and Dec values are NOT aligned with the meridian or equator,
+        and must be externally calibrated.
+        '''
         ra = -self._inquire_position(1)
         dec = self._inquire_position(2)
         return ra, dec
 
     def get_azm_alt(self) -> tuple[float, float]:
-        # TODO DOC ME
+        '''
+        Where is the telescope pointing, in Azm/Alt, in radians?
+        Result is invalid unless the mount is Alt/Az.
+        Azm and Alt values are NOT aligned with the pole or horizon,
+        and must be externally calibrated.
+        '''
         azm = self._inquire_position(1)
         alt = self._inquire_position(2)
         return azm, alt
 
     def _set_motion_mode(self, axis: int, fast: bool, ccw: bool) -> None:
+        '''Set the direction of the axis, and whether it's in fast mode.'''
         value = 0x10
         if fast:
             value = value | 0x20
@@ -558,6 +610,10 @@ class SkyWatcher(Mount):
         self._speak(':G' + str(axis) + encode_int_2(value), 0)
 
     def _set_step_period(self, axis: int, step_period: float) -> None:
+        '''
+        Set the timer interrupt period for the axis,
+        in multiples of the clock period.
+        '''
         assert step_period >= 0
         step_period = int(step_period)
         if step_period > 0xffffff:
@@ -565,6 +621,7 @@ class SkyWatcher(Mount):
         self._speak(':I' + str(axis) + encode_int_6(step_period), 0)
 
     def _slew_axis(self, axis: int, rate: float) -> None:
+        '''Slew the axis at the specified rate, in radians/second.'''
         if rate == 0 or (self.rate[axis] * rate < 0):
             self._speak(':K' + str(axis), 0)
             if not self._inquire_status(axis).running:
@@ -588,30 +645,36 @@ class SkyWatcher(Mount):
         self.rate[axis] = rate
 
     def slew_azm_or_ra(self, rate: float) -> None:
+        '''Slew the mount in azimuth or RA, depending on mount type.'''
         self._slew_axis(1, rate)
 
     def slew_alt_or_dec(self, rate: float) -> None:
+        '''Slew the mount in altitude or Dec, depending on mount type.'''
         self._slew_axis(2, rate)
 
     def slew_azm(self, rate: float) -> None:
+        '''Slew the mount in azimuth. Only works for alt/az mounts.'''
         self.slew_azm_or_ra(rate)
 
     def slew_alt(self, rate: float) -> None:
+        '''Slew the mount in altitude. Only works for alt/az mounts.'''
         self.slew_alt_or_dec(rate)
 
     def slew_ra(self, rate: float) -> None:
+        '''Slew the mount in RA. Only works for EQ mounts.'''
         self.slew_azm_or_ra(-rate)
 
     def slew_dec(self, rate: float) -> None:
+        '''Slew the mount in Dec. Only works for EQ mounts.'''
         self.slew_alt_or_dec(rate)
 
     def slew_azmalt(self, azm_rate: float, alt_rate: float) -> None:
-        '''Set the Az/Alt slew rates.'''
+        '''Set the Az/Alt slew rates. Only works for alt/az mounts.'''
         self.slew_azm(azm_rate)
         self.slew_alt(alt_rate)
 
     def slew_radec(self, ra_rate: float, dec_rate: float) -> None:
-        '''Set the RA/Dec slew rates.'''
+        '''Set the RA/Dec slew rates. Only works for EQ mounts.'''
         self.slew_ra(ra_rate)
         self.slew_dec(dec_rate)
 
