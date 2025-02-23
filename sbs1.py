@@ -30,7 +30,7 @@ import threading
 import multiprocessing
 import time
 
-from typing import TypeVar, Any
+from typing import TypeVar, Any, Generic
 
 import astropy.coordinates as coords
 import astropy.units as units
@@ -45,7 +45,7 @@ METERS_PER_FOOT = 0.3048
 
 T = TypeVar('T')
 
-class TimestampedDatum[T]:
+class TimestampedDatum(Generic[T]):
     '''
     Records a data point about an airplane, and the time at which that data point
     was received. If this data point is calculated from several others, then it
