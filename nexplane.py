@@ -8,6 +8,7 @@ import numpy
 import sys
 import time
 import traceback
+import yaml
 
 import astropy.time
 import astropy.coordinates as coords
@@ -15,6 +16,7 @@ import astropy.units as units
 
 from typing import Any
 
+import align
 import astronomical
 import config
 import gui
@@ -26,30 +28,15 @@ import sbs1
 import tracker
 import util
 
-from util import unwrap
-
-def azm_alt_ang_dist(aa1: tuple[float, float], aa2: tuple[float, float]) -> float:
-    '''Compute the angle in the sky between two azimuth/elevation directions.'''
-    ned1 = util.aer_to_ned(aa1[0], aa1[1], 1.0)
-    ned2 = util.aer_to_ned(aa2[0], aa2[1], 1.0)
-    return math.acos(numpy.dot(ned1, ned2))
+from util import unwrap, VALID_MOUNT_MODES, VALID_TELESCOPE_PROTOCOLS, SKYWATCHER_TELESCOPE_PROTOCOLS
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
-    parser, config_data = config.get_arg_parser_and_config_data(
+    parser, config_data, validators = config.get_arg_parser_and_config_data(
         description='Helps you track airplanes and satellites with a Celestron '
                     'NexStar telescope mount.')
 
-    parser.add_argument(
-        '--hootl', dest='run_hootl', action='store_true',
-        help='Do not connect to telescope_server.py, but instead run an '
-             'internal simulation of the telescope. This is useful for testing.' +
-             (' This is the default' if config_data['hootl'] else ''))
-    parser.add_argument(
-        '--no-hootl', dest='run_hootl', action='store_false',
-        help='Opposite of --hootl.' +
-             (' This is the default' if not config_data['hootl'] else ''))
-    parser.set_defaults(run_hootl=config_data['hootl'])
+    config.add_arg_hootl(parser, config_data, validators)
 
     parser.add_argument(
         '--bw', action='store_true',
@@ -61,37 +48,12 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
         help='Make the display background white (this is useful to read more '
              'easily on dimmer screens when operating in direct sunlight).')
 
-    parser.add_argument(
-        '--location', type=str, default=config_data['location'],
-        help='Where are you? Pick a named location from your config file '
-             '(default: ' + config_data['location'] + ')')
-
-    parser.add_argument(
-        '--landmark', type=str, default=config_data['landmark'],
-        help='If it is not possible to use the telescope\'s internal alignment '
-             'functions (perhaps because it is cloudy), you can manually point '
-             'the telescope at a location listed in your config file, and then '
-             'start this program with the --landmark option specifying where '
-             'the telescope is pointed. The offset between the known location '
-             'and the telescope\'s reported position will be recorded and '
-             'compensated for.')
-
-    parser.add_argument(
-        '--telescope', type=str, default=config_data['telescope_server'],
-        help='The host:port of the telescope_server.py process, which talks '
-             'to the telescope mount '
-             '(default: ' + config_data['telescope_server'] + ')')
-
-    parser.add_argument(
-        '--mount-mode', type=str, default=config_data['mount_mode'],
-        help='Type of telescope mount, either altaz or eq. Default: {}'.format(
-            config_data['mount_mode']
-        )
-    )
-
-    parser.add_argument(
-        '--telescope-protocol', type=str, default=config_data['telescope_protocol'],
-        help='Which protocol to use to talk to the telescope (default: {})'.format(config_data['telescope_protocol']))
+    config.add_arg_location(parser, config_data, validators)
+    config.add_arg_alignment(parser, config_data, validators)
+    config.add_arg_landmark(parser, config_data, validators)
+    config.add_arg_telescope(parser, config_data, validators)
+    config.add_arg_mount_mode(parser, config_data, validators)
+    config.add_arg_telescope_protocol(parser, config_data, validators)
 
     parser.add_argument(
         '--sbs1', type=str, action='append', default=[],
@@ -102,11 +64,10 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
 
     args = parser.parse_args()
 
+    config.validate(validators, args)
+
     if args.sbs1 == []:
         args.sbs1 = config_data['sbs1_servers']
-
-    if args.mount_mode not in ['altaz', 'eq']:
-        raise Exception('Error, invalid --mount-mode ' + repr(args.mount_mode) + '. Valid values are "altaz" and "eq".')
 
     return args, config_data
 
@@ -122,22 +83,7 @@ def main() -> None:
     moon = astronomical.AstroBody('moon', observatory_location)
 
     # Set up a serial interface to the telescope, either a HOOTL one or a real one.
-    if args.run_hootl:
-        if args.telescope_protocol == 'nexstar-hand-control':
-            current_time = util.get_current_time()
-
-            serial_iface: mount_base.Client = nexstar.NexStarSerialHootl(
-                current_time=current_time,
-                observatory_location=observatory_location,
-                altaz_mode=(args.mount_mode == 'altaz'))
-        else:
-            assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
-            serial_iface = skywatcher.SkyWatcherSerialHootl()
-    else:
-        if args.telescope_protocol == 'skywatcher-mount-head-wifi':
-            serial_iface = skywatcher.SkyWatcherUdpClient(args.telescope)
-        else:
-            serial_iface = mount_base.SerialNetClient(args.telescope)
+    serial_iface = align.setup_serial_interface(args, observatory_location)
 
     # Receive airplane data.
     sbs1_receiver = sbs1.Sbs1Receiver(args.sbs1, observatory_location)
@@ -153,11 +99,7 @@ def main() -> None:
     while True:
         try:
             # Telescope control interface.
-            if args.telescope_protocol == 'nexstar-hand-control':
-                telescope: mount_base.Mount = nexstar.NexStar(serial_iface)
-            else:
-                assert args.telescope_protocol in ['skywatcher-mount-head-usb', 'skywatcher-mount-head-eqmod', 'skywatcher-mount-head-wifi']
-                telescope = skywatcher.SkyWatcher(serial_iface)
+            telescope = align.setup_telescope_interface(args, serial_iface)
 
             # Tracking controller, sends commands to the telescope.
             target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
@@ -165,47 +107,27 @@ def main() -> None:
             # Keeps track of how many times we've updated the controller gains.
             last_gain_changes = 0
 
+            # Alignment
             if args.landmark:
-                sky_prefix = 'sky:'
-                if args.landmark.startswith(sky_prefix):
-                    # The telescope begins pointed at a known celestial object.
-                    # Record the location of this object in the telescope's coordinate space.
-                    object_name = args.landmark[len(sky_prefix):]
-                    solar_system_bodies = [
-                        'sun',
-                        'mercury',
-                        'venus',
-                        'moon',
-                        'mars',
-                        'jupiter',
-                        'saturn',
-                        'uranus',
-                        'neptune',
-                    ]
-                    if object_name in solar_system_bodies:
-                        object_skycoord = coords.get_body(object_name, util.get_current_time(), location=observatory_location)
-                    else:
-                        object_skycoord = coords.SkyCoord.from_name(object_name)
-                    object_altaz = object_skycoord.transform_to(coords.AltAz(obstime=util.get_current_time(), location=observatory_location))
-                    init_real_azm = object_altaz.az.to(units.rad).value
-                    init_real_alt = object_altaz.alt.to(units.rad).value
-                else:
-                    # The telescope begins pointed at a known landmark.
-                    # Record the location of this landmark in the telescope's coordinate space.
-                    landmark = util.configured_earth_location(config_data, args.landmark)
-                    landmark_aer = util.ned_to_aer(util.ned_between_earth_locations(landmark, observatory_location))
-                    init_real_azm, init_real_alt, _ = landmark_aer
-
+                assert not args.alignment, '--landmark and --alignment are mutually exclusive.'
                 if args.mount_mode == 'altaz':
-                    init_scope_azm, init_scope_alt = telescope.get_azm_alt()
-                    azm_cal = util.wrap_rad(init_real_azm - init_scope_azm, 0)
-                    alt_cal = util.wrap_rad(init_real_alt - init_scope_alt, 0)
+                    azm_cal, alt_cal = align.azm_alt_cal(telescope, args.landmark, config_data, observatory_location)
                 else:
                     assert args.mount_mode == 'eq'
-                    init_real_ra, init_real_dec = util.altaz_to_radec(init_real_alt, init_real_azm, observatory_location, util.get_current_time())
-                    init_scope_ra, init_scope_dec = telescope.get_ra_dec()
-                    ra_cal = util.wrap_rad(init_real_ra - init_scope_ra, 0)
-                    dec_cal = util.wrap_rad(init_real_dec - init_scope_dec, 0)
+                    ra_cal, dec_cal = align.ra_dec_cal(telescope, args.landmark, config_data, observatory_location)
+            elif args.alignment:
+                with open(args.alignment) as f:
+                    alignment_data = yaml.load(f.read(), yaml.Loader)
+                if alignment_data['mount_mode'] != args.mount_mode:
+                    raise Exception('--mount-mode passed to align.py and nexplane.py must match. ' +
+                                    alignment_data['mount_mode'] + ' != ' + args.mount_mode)
+                if args.mount_mode == 'altaz':
+                    azm_cal = alignment_data['calibration']['azm']
+                    alt_cal = alignment_data['calibration']['alt']
+                else:
+                    assert args.mount_mode == 'eq'
+                    ra_cal = alignment_data['calibration']['ra']
+                    dec_cal = alignment_data['calibration']['dec']
             else:
                 # We'll trust that the telescope has been aligned using one of the built in methods.
                 if args.mount_mode == 'altaz':
@@ -253,7 +175,7 @@ def main() -> None:
                         target_tracker.set_gains(kp, ki, kd)
                     last_gain_changes = gain_changes
 
-                    if azm_alt_ang_dist(scope_azm_alt, unwrap(sun.az_el())) < 20/180*math.pi:
+                    if util.azm_alt_ang_dist(scope_azm_alt, unwrap(sun.az_el())) < 20/180*math.pi:
                         # We've strayed into the keep out circle around the Sun! Emergency Stop!
                         # The user can fix this with the hand controller.
                         target_tracker.stop()

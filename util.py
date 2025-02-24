@@ -11,6 +11,21 @@ import astropy.coordinates as coords
 import astropy.units as units
 import astropy.time
 
+VALID_MOUNT_MODES = ['altaz', 'eq']
+
+VALID_TELESCOPE_PROTOCOLS = [
+    'nexstar-hand-control',
+    'skywatcher-mount-head-usb',
+    'skywatcher-mount-head-eqmod',
+    'skywatcher-mount-head-wifi',
+]
+
+SKYWATCHER_TELESCOPE_PROTOCOLS = [
+    'skywatcher-mount-head-usb',
+    'skywatcher-mount-head-eqmod',
+    'skywatcher-mount-head-wifi',
+]
+
 T = TypeVar('T')
 IntOrFloat = TypeVar('IntOrFloat', bound = int | float)
 
@@ -159,3 +174,9 @@ def radec_to_altaz(ra: float, dec: float, observatory_location: coords.EarthLoca
     azm = alt_az.az.to(units.rad).value
 
     return alt, azm
+
+def azm_alt_ang_dist(aa1: tuple[float, float], aa2: tuple[float, float]) -> float:
+    '''Compute the angle in the sky between two azimuth/elevation directions.'''
+    ned1 = aer_to_ned(aa1[0], aa1[1], 1.0)
+    ned2 = aer_to_ned(aa2[0], aa2[1], 1.0)
+    return math.acos(numpy.dot(ned1, ned2))

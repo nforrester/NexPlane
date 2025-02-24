@@ -12,10 +12,14 @@ import config
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
-    parser, config_data = config.get_arg_parser_and_config_data(
+    parser, config_data, validators = config.get_arg_parser_and_config_data(
         description='Read and dump the complete NexPlane configuration, for debugging purposes.')
 
-    return parser.parse_args(), config_data
+    args = parser.parse_args()
+
+    config.validate(validators, args)
+
+    return args, config_data
 
 def main() -> None:
     args, config_data = parse_args_and_config()

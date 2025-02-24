@@ -3,8 +3,11 @@
 '''This script helps run a library of useful testcases to exercise NexPlane in HOOTL.'''
 
 import itertools
+import os
 import subprocess
 import sys
+import tempfile
+import time
 
 from typing import Any, Iterator
 from contextlib import contextmanager
@@ -37,6 +40,7 @@ def fg(cmd: list[str]) -> None:
 def run_mypy() -> None:
     fg([
         'mypy',
+        'align.py',
         'dump_config.py',
         'nexplane.py',
         'rpc_client_test.py',
@@ -60,31 +64,57 @@ def telescope_server(telescope_protocol: str, mount_mode: str) -> Any:
         '--mount-mode', mount_mode,
     ])
 
-def nexplane_maybe_hootl(hootl: bool, telescope_protocol: str, mount_mode: str, *args: str) -> None:
-    fg([
-        './nexplane.py',
-        ('--hootl' if hootl else '--no-hootl'),
+def align(alignment: str, telescope_protocol: str, mount_mode: str) -> Any:
+    return fg([
+        './align.py',
         '--location', LOCATION,
         '--landmark', LANDMARK,
-        '--sbs1', 'localhost:'+SAT_PORT,
         '--telescope-protocol', telescope_protocol,
         '--mount-mode', mount_mode,
-        *args,
+        '--alignment', alignment,
     ])
+
+def nexplane_flexible(hootl: bool, landmark: bool, alignment: str | None, telescope_protocol: str, mount_mode: str, *args: str) -> None:
+    cmd = []
+    cmd.append('./nexplane.py')
+    cmd.append('--hootl' if hootl else '--no-hootl')
+    cmd.extend(['--location', LOCATION])
+    if landmark:
+        cmd.extend(['--landmark', LANDMARK])
+    if alignment is not None:
+        cmd.extend(['--alignment', alignment])
+    cmd.extend(['--sbs1', 'localhost:'+SAT_PORT])
+    cmd.extend(['--telescope-protocol', telescope_protocol])
+    cmd.extend(['--mount-mode', mount_mode])
+    cmd.extend(args)
+    fg(cmd)
 
 def nexplane(*args: str) -> None:
     with satellites():
-        nexplane_maybe_hootl(True, *args)
+        time.sleep(0.1)
+        nexplane_flexible(True, True, None, *args)
 
 def nexplane_with_server(telescope_protocol: str, mount_mode: str, *args: str) -> None:
     with satellites():
         with telescope_server(telescope_protocol, mount_mode):
-            nexplane_maybe_hootl(False, telescope_protocol, mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
+            time.sleep(0.1)
+            nexplane_flexible(False, True, None, telescope_protocol, mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
 
 def nexplane_with_skywatcher_wifi(mount_mode: str, *args: str) -> None:
     with satellites():
         with bg(['./skywatcher_wifi_hootl.py', SCOPE_PORT]):
-            nexplane_maybe_hootl(False, 'skywatcher-mount-head-wifi', mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
+            time.sleep(0.1)
+            nexplane_flexible(False, True, None, 'skywatcher-mount-head-wifi', mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
+
+def nexplane_with_align(telescope_protocol: str, mount_mode: str, *args: str) -> None:
+    with tempfile.TemporaryDirectory() as tempdir:
+        alignment = os.path.join(tempdir, 'align.yaml')
+
+        with satellites():
+            with telescope_server(telescope_protocol, mount_mode):
+                time.sleep(0.1)
+                align(alignment, telescope_protocol, mount_mode)
+                nexplane_flexible(False, False, alignment, telescope_protocol, mount_mode, '--telescope', 'localhost:'+SCOPE_PORT, *args)
 
 def test(test_num: int, description: Any, function: Any, *args: Any, **kwargs: Any) -> None:
     print()
@@ -124,6 +154,12 @@ TESTS = [
 
     [10, 'Server mode - Sky-Watcher mount with WiFi',
      nexplane_with_skywatcher_wifi, 'altaz'],
+
+    [11, 'Server mode, Alignment test - NexStar mount with USB in Alt-Az mode',
+     nexplane_with_align, 'nexstar-hand-control', 'altaz'],
+
+    [12, 'Server mode, Alignment test - Sky-Watcher mount with USB in Equatorial mode',
+     nexplane_with_align, 'skywatcher-mount-head-usb', 'eq'],
 ]
 
 def main() -> None:

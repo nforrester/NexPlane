@@ -137,19 +137,10 @@ def telescope_serial_udp_server(serial_port: str | None, net_port: int, telescop
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
-    parser, config_data = config.get_arg_parser_and_config_data(
+    parser, config_data, validators = config.get_arg_parser_and_config_data(
         description='Exposes the telescope serial interface on the network.')
 
-    parser.add_argument(
-        '--hootl', dest='run_hootl', action='store_true',
-        help='Do not connect to a telescope via a serial port, but instead run an '
-             'internal simulation of the telescope. This is useful for testing.' +
-             (' This is the default' if config_data['hootl'] else ''))
-    parser.add_argument(
-        '--no-hootl', dest='run_hootl', action='store_false',
-        help='Opposite of --hootl.' +
-             (' This is the default' if not config_data['hootl'] else ''))
-    parser.set_defaults(run_hootl=config_data['hootl'])
+    config.add_arg_hootl(parser, config_data, validators)
 
     parser.add_argument(
         '--serial-port', default=config_data['serial_port'],
@@ -161,23 +152,15 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
         '--network-port', type=int, default=45345,
         help='Which network port to use (default: 45345)')
 
-    parser.add_argument(
-        '--telescope-protocol', type=str, default=config_data['telescope_protocol'],
-        help='Which protocol to use to talk to the telescope (default: {})'.format(config_data['telescope_protocol']))
+    config.add_arg_telescope_protocol(parser, config_data, validators)
+    config.add_arg_location(parser, config_data, validators)
+    config.add_arg_mount_mode(parser, config_data, validators)
 
-    parser.add_argument(
-        '--location', type=str, default=config_data['location'],
-        help='Where are you? Pick a named location from your config file '
-             '(default: ' + config_data['location'] + ')')
+    args = parser.parse_args()
 
-    parser.add_argument(
-        '--mount-mode', type=str, default=config_data['mount_mode'],
-        help='Type of telescope mount, either altaz or eq. Default: {}'.format(
-            config_data['mount_mode']
-        )
-    )
+    config.validate(validators, args)
 
-    return parser.parse_args(), config_data
+    return args, config_data
 
 def main() -> None:
     args, config_data = parse_args_and_config()

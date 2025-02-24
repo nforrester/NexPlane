@@ -410,6 +410,21 @@ The offset between the known azimuth and elevation to that landmark and the repo
 and elevation from the telescope will be recorded and compensated for. This is similar to
 performing a One-Star Align.
 
+If you quit NexPlane then it can by annoying to point your telescope back at the landmark
+before you start it again. To simplify this, you may instead run `align.py` to record the
+offset between the position reported by the telescope mount, and the position of the
+landmark. The information is saved to a file of your choosing, specified by the
+`--alignment` option.
+
+    $ ./align.py --landmark washington_monument --alignment align.yaml
+
+Now you can pass the `--alignment` option to `nexplane.py`, and it will load the saved
+offsets. This way you can restart `nexplane.py` as many times as you like without pointing
+the telescope back at the landmark *if you leave the mount powered on*. If you power off
+the mount then the alignment data is invalidated.
+
+    $ ./nexplane.py --alignment align.yaml
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
@@ -438,8 +453,9 @@ be different if you have changed the configuration from the default.
 
     $ ./nexplane.py --help
     usage: nexplane.py [-h] [--config CONFIG] [--hootl] [--no-hootl] [--bw]
-                       [--white-bg] [--location LOCATION] [--landmark LANDMARK]
-                       [--telescope TELESCOPE] [--mount-mode MOUNT_MODE]
+                       [--white-bg] [--location LOCATION] [--alignment ALIGNMENT]
+                       [--landmark LANDMARK] [--telescope TELESCOPE]
+                       [--mount-mode MOUNT_MODE]
                        [--telescope-protocol TELESCOPE_PROTOCOL] [--sbs1 SBS1]
 
     Helps you track airplanes and satellites with a Celestron NexStar telescope mount.
@@ -454,7 +470,7 @@ be different if you have changed the configuration from the default.
                             defaults for other command line arguments, in effect
                             serving as customized short-hand for complex argument
                             combinations.
-      --hootl               Do not connect to telescope_server.py, but instead run an
+      --hootl               Do not connect to a real telescope, but instead run an
                             internal simulation of the telescope. This is useful for
                             testing.
       --no-hootl            Opposite of --hootl. This is the default
@@ -465,6 +481,9 @@ be different if you have changed the configuration from the default.
                             sunlight).
       --location LOCATION   Where are you? Pick a named location from your config file
                             (default: griffith)
+      --alignment ALIGNMENT
+                            File storing telescope alignment data, created by align.py
+                            and read by nexplane.py. (default: None)
       --landmark LANDMARK   If it is not possible to use the telescope's internal
                             alignment functions (perhaps because it is cloudy), you
                             can manually point the telescope at a location listed in
@@ -472,7 +491,7 @@ be different if you have changed the configuration from the default.
                             --landmark option specifying where the telescope is
                             pointed. The offset between the known location and the
                             telescope's reported position will be recorded and
-                            compensated for.
+                            compensated for. (default: None)
       --telescope TELESCOPE
                             The host:port of the telescope_server.py process, which
                             talks to the telescope mount (default: localhost:45345)
@@ -508,9 +527,9 @@ be different if you have changed the configuration from the default.
                             defaults for other command line arguments, in effect
                             serving as customized short-hand for complex argument
                             combinations.
-      --hootl               Do not connect to a telescope via a serial port, but
-                            instead run an internal simulation of the telescope. This
-                            is useful for testing.
+      --hootl               Do not connect to a real telescope, but instead run an
+                            internal simulation of the telescope. This is useful for
+                            testing.
       --no-hootl            Opposite of --hootl. This is the default
       --serial-port SERIAL_PORT
                             Which serial port to use (default: the first port it finds
@@ -553,6 +572,55 @@ be different if you have changed the configuration from the default.
                            (default: griffith)
       --port PORT          Port to run the SBS-1 server on (default: 40004)
 
+### `align.py`
+
+    $ ./align.py --help
+    usage: align.py [-h] [--config CONFIG] [--hootl] [--no-hootl]
+                    [--location LOCATION] [--alignment ALIGNMENT]
+                    [--landmark LANDMARK] [--telescope TELESCOPE]
+                    [--mount-mode MOUNT_MODE]
+                    [--telescope-protocol TELESCOPE_PROTOCOL]
+
+    Tool for creating saved alignment files that can be loaded by nexplane.py in lieu
+    of landmark alignment.
+
+    options:
+      -h, --help            show this help message and exit
+      --config CONFIG       Specify an additional config file to be read that takes
+                            priority over config.yaml and config_default.yaml. This
+                            option can be provided multiple times, causing multiple
+                            config files to be read, with later ones taking priority
+                            over earlier ones. These config files may alter the
+                            defaults for other command line arguments, in effect
+                            serving as customized short-hand for complex argument
+                            combinations.
+      --hootl               Do not connect to a real telescope, but instead run an
+                            internal simulation of the telescope. This is useful for
+                            testing.
+      --no-hootl            Opposite of --hootl. This is the default
+      --location LOCATION   Where are you? Pick a named location from your config file
+                            (default: griffith)
+      --alignment ALIGNMENT
+                            File storing telescope alignment data, created by align.py
+                            and read by nexplane.py. (default: None)
+      --landmark LANDMARK   If it is not possible to use the telescope's internal
+                            alignment functions (perhaps because it is cloudy), you
+                            can manually point the telescope at a location listed in
+                            your config file, and then start this program with the
+                            --landmark option specifying where the telescope is
+                            pointed. The offset between the known location and the
+                            telescope's reported position will be recorded and
+                            compensated for. (default: None)
+      --telescope TELESCOPE
+                            The host:port of the telescope_server.py process, which
+                            talks to the telescope mount (default: localhost:45345)
+      --mount-mode MOUNT_MODE
+                            Type of telescope mount, either altaz or eq. Default:
+                            altaz
+      --telescope-protocol TELESCOPE_PROTOCOL
+                            Which protocol to use to talk to the telescope (default:
+                            nexstar-hand-control)
+
 ## Advanced software testing
 
 If you are making changes to NexPlane, or you are having trouble and want a more
@@ -562,7 +630,7 @@ mount, you can run the full HOOTL test suite.
 This will run the MyPy static type checker for Python, and then start NexPlane
 over and over again in a variety of configurations. For each such test, the
 NexPlane window will open up and you can interact with it. When you close the window,
-NexPlane will start again with a different configuration. There are currently 10
+NexPlane will start again with a different configuration. There are currently 12
 such tests.
 
     $ ./run_test.py
@@ -651,6 +719,29 @@ such tests.
     ./nexplane.py --no-hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-wifi --mount-mode altaz --telescope localhost:45345
     Listening on port 40004
     New connection
+
+
+    TEST 11: Server mode, Alignment test - Sky-Watcher mount with USB in Alt-Az mode
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./telescope_server.py --hootl --location griffith --network-port 45345 --telescope-protocol skywatcher-mount-head-usb --mount-mode altaz
+    ./align.py --location griffith --landmark hollywood_sign --mount-mode altaz --alignment /tmp/tmpzgt3qpl1/align.yaml
+    Listening on port 40004
+    Starting RPC server...
+    Ready.
+    ./nexplane.py --no-hootl --location griffith --alignment /tmp/tmpzgt3qpl1/align.yaml --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode altaz --telescope localhost:45345
+    New connection
+
+
+    TEST 12: Server mode, Alignment test - Sky-Watcher mount with USB in Equatorial mode
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./telescope_server.py --hootl --location griffith --network-port 45345 --telescope-protocol skywatcher-mount-head-usb --mount-mode eq
+    ./align.py --location griffith --landmark hollywood_sign --mount-mode eq --alignment /tmp/tmp92q3i1hp/align.yaml
+    Starting RPC server...
+    Ready.
+    Listening on port 40004
+    ./nexplane.py --no-hootl --location griffith --alignment /tmp/tmp92q3i1hp/align.yaml --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode eq --telescope localhost:45345
+    New connection
+
 
 If you wish to run only a couple particular tests, you may specify which ones on the command line:
 

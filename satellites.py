@@ -87,15 +87,12 @@ def parse_tle_file(filename: str) -> list[Sat]:
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
-    parser, config_data = config.get_arg_parser_and_config_data(
+    parser, config_data, validators = config.get_arg_parser_and_config_data(
         description='Consume TLE files that you downloaded from CelesTrak, '
                     'and emit SBS-1 data that nexplane.py can consume in '
                     'order to point at satellites.')
 
-    parser.add_argument(
-        '--location', type=str, default=config_data['location'],
-        help='Where are you? Pick a named location from your config file '
-             '(default: ' + config_data['location'] + ')')
+    config.add_arg_location(parser, config_data, validators)
 
     parser.add_argument(
         '--port', type=int, default=40004,
@@ -106,7 +103,11 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
         help='TLE files to consume '
              '(default: ' + ', '.join(config_data['tle_files']) + ')')
 
-    return parser.parse_args(), config_data
+    args = parser.parse_args()
+
+    config.validate(validators, args)
+
+    return args, config_data
 
 def main() -> None:
     args, config_data = parse_args_and_config()
