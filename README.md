@@ -13,64 +13,6 @@ unattended.
 
 NexPlane comes with **absolutely no warranty**, and use of NexPlane is entirely **at your own risk**.
 
-# EXPERIMENTAL BRANCH WARNING
-
-This is an experimental branch of the software. It has not been well tested. The purpose of
-publishing this branch is to transport the software to computers where it can be tested.
-You should probably use the master branch instead unless you have a Sky-Watcher mount and
-are feeling adventurous.
-
-Notes from a field test with a Sky-Watcher AZ-EQ6:
-
-- WARNING: Sometimes the on-screen representation of the telescope's location froze, and the
-  telescope kept running. I found that pressing buttons on the hand controller stopped the
-  motion. It would be good to try reproducing this in a controlled setting to debug it.
-- The motors run in the correct directions.
-- Tracking is very smooth, pointing accuracy seems comparable to the NexStar 8SE mount.
-- Alignment to "landmarks" in the sky works well.
-- Significant manual corrections are needed as the telescope moves to different parts of the
-  sky, but the size and direction of the corrections seems roughly consistent in particular
-  areas. Pointing accuracy seems to be best in the part of the sky near the chosen landmark.
-  perhaps a system for alignment to multiple landmarks could be devised? This would require
-  significant UI changes.
-- It would be really great to have a way to save and restore alignment so that if the
-  mount head stays on the alignment can be preserved even if NexPlane restarts.
-
-Quick summary of new features:
-
-- Support is added for the Sky-Watcher AZ-EQ6 mount. Other similar Sky-Watcher mounts like
-  the EQ6-R and AZ-GTi are likely to work too.
-- There's a new command line option called `--telescope-protocol`, and a corresponding
-  config parameter called `telescope_protocol` which sets its defult value. This option can
-  take on the following values:
-  - `nexstar-hand-control` - Your computer is plugged into a NexStar mount's hand controller.
-  - `skywatcher-mount-head-usb` - Your computer is plugged into a Sky-Watcher mount head (not
-    the hand controller) with a USB cable.
-  - `skywatcher-mount-head-eqmod` - Your computer is plugged into a Sky-Watcher mount head (not
-    the hand controller) with an EQMOD cable.
-  - `skywatcher-mount-head-wifi` - Your computer is connected to a Sky-Watcher mount head
-    via Wi-Fi. If using this option, DO NOT start `telescope_server.py`. Instead, pass
-    `--telescope <IP address of mount head on the wifi>:11880` to `nexplane.py`, and the
-    mount head itself will be the server.
-- Unlike for NexStar mounts, Sky-Watcher mounts are not able to report their position to
-  NexPlane in an aligned coordinate system. You therefore must use `--landmark` alignment
-  with Sky-Watcher mounts.
-- `--landmark` alignment now works with equatorial mounts.
-- The `--landmark` alignment option has been extended with a new capability: you can now align
-  to a "landmark" in the sky. To align on Jupiter, specify `--landmark sky:jupiter`. To align
-  on Sirius, specify `--landmark sky:sirius`. Aligning on bodies outside the solar system
-  requires an internet connection.
-- The HOOTL simulator can now optionally be run inside the telescope server, or in the new
-  `skywatcher_wifi_hootl.py` server, instead of inside `nexplane.py`. This allows end-to-end
-  testing of the network stack. This has given `telescope_server.py` some new options.
-- A new `run_test.py` script can run a useful battery of tests on NexPlane.
-- Compatibility with Python 3.9 and earlier is officially broken. I have not tested Python3.10.
-  Python3.11 and later are supported.
-- Network robustness is improved, and there's a warning in red text in the middle of the
-  screen when communication failures are detected.
-- Trackable targets are now displayed in gray if they're in space.
-- The back of the telescope will be illustrated if the telescope is pointed at the ground.
-
 # NexPlane
 
 NexPlane can help you drive a Celestron or Sky-Watcher telescope mount to track
