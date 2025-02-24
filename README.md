@@ -710,6 +710,22 @@ such tests.
     Listening on port 40004
     New connection
 
+If you wish to run only a couple particular tests, you may specify which ones on the command line:
+
+    $ ./run_test.py 0 4
+
+
+    TEST 0: MyPy
+    mypy dump_config.py nexplane.py rpc_client_test.py rpc_server_test.py run_test.py satellites.py skywatcher_wifi_hootl.py telescope_server.py
+    Success: no issues found in 8 source files
+
+
+    TEST 4: Sky-Watcher mount with USB in Equatorial mode, Black and white
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode eq --bw
+    Listening on port 40004
+    New connection
+
 All of the tests run `satellites.py`.
 
     $ ./satellites.py
