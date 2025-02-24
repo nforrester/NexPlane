@@ -49,7 +49,7 @@ Quick summary of new features:
   - `skywatcher-mount-head-eqmod` - Your computer is plugged into a Sky-Watcher mount head (not
     the hand controller) with an EQMOD cable.
   - `skywatcher-mount-head-wifi` - Your computer is connected to a Sky-Watcher mount head
-    via WiFi. If using this option, DO NOT start `telescope_server.py`. Instead, pass
+    via Wi-Fi. If using this option, DO NOT start `telescope_server.py`. Instead, pass
     `--telescope <IP address of mount head on the wifi>:11880` to `nexplane.py`, and the
     mount head itself will be the server.
 - Unlike for NexStar mounts, Sky-Watcher mounts are not able to report their position to
@@ -73,8 +73,8 @@ Quick summary of new features:
 
 # NexPlane
 
-NexPlane can help you drive a Celestron NexStar telescope mount to track airplanes and satellites.
-SynScan mounts will probably work too, but have not been tested.
+NexPlane can help you drive a Celestron or Sky-Watcher telescope mount to track
+airplanes and satellites. See the [Requirements](#requirements) section for a list of supported models.
 
 In order to track airplanes, you will need a source of live data about airplanes near you in
 SBS-1 (BaseStation) format. An easy way to generate such data is with an
@@ -99,10 +99,71 @@ directly by Wi-Fi.
 ## Requirements
 
 - Linux
-- Your Linux distro's GLUT package (on Ubuntu 12.10 that's `libglut-dev`, on Arch that's `freeglut`).
-- Python 3, and the Pip packages spelled out in `requirements.txt`
-- A Celestron NexStar series telescope.
+- Your Linux distro's GLUT package (on Ubuntu that's `libglut-dev`, on Arch that's `freeglut`).
+- Python 3.11 or later, and the Pip packages spelled out in `requirements.txt`.
+  Python 3.10 may work, but has not been tested. Python 3.9 or earlier will not work.
+  Check your python version with `python3 --version`.
+- A supported Celestron or Sky-Watcher Go-To telescope mount.
 - If you want to look at airplanes: an ADS-B receiver and antenna.
+
+The following telescope mounts have been **tested and shown to work**.
+
+- **Celestron** mounts
+  - NexStar SE mount for the 8SE and 6SE models
+- **Sky-Watcher** mounts
+  - AZ-EQ6 PRO, but only with motor controller firmware version 3.39 or later.
+  - AZ-GTi. Probably also requires motor controller firmware version 3.39 or later.
+
+These models are **likely to work**, but have not been tested.
+If you have one and it works, please let me know so I can add it to the list above.
+
+- **Celestron** mounts that have a NexStar hand controller attached to them with a cable.
+  - Advanced VX series (aka AVX)
+  - CGEM II series
+  - CGX
+  - CGX-L series
+  - CPC Deluxe HD series
+  - CPC series
+  - LCM series
+  - NexStar Evolution series
+  - NexStar SE mount for the 5SE and 4SE models
+  - NexStar SLT series
+  - SkyProdigy series
+- **Sky-Watcher** mounts that have a SynScan hand controller attached to them with a cable,
+  and motor controller firmware version 3.39 or later.
+  - CQ350 PRO
+  - EQ3 PRO
+  - EQ5 PRO
+  - EQ6 PRO
+  - EQ6R PRO
+  - EQ8 PRO
+  - EQM-35 PRO
+  - HEQ5 PRO
+  - Virtuoso
+- **Sky-Watcher** mounts that connect to a smart phone by Wi-Fi. They probably also require
+  motor controller firmware 3.39 or later.
+  - AZ-GTiX
+  - Star Adventurer GTi
+
+These models are **probably not going to work** without modifications to NexPlane.
+If you have such a mount and are willing to experiment, open a GitHub issue and if I have time
+I might be able to help you. No promises.
+
+- **Celestron** mounts that connect to a smart phone by Wi-Fi.
+  - Astro Fi series
+  - Origin
+
+These models **may never work**, but you're welcome to try.
+
+- **Sky-Watcher** mounts for which motor controller firmware version 3.39 or later is not available.
+  They will probably move, but they will not be able to smoothly track moving targets.
+  - AllView
+  - AZ SynScan
+  - AZ-EQ5 PRO
+- **Sky-Watcher** mounts which do not appear to have full Go-To capability
+  (but I've never tested them myself).
+  - Star Adventurer
+  - Star Adventurer Mini Wi-Fi
 
 ## Getting Started
 
@@ -150,7 +211,7 @@ You can verify that this worked and see how your new `config.yaml` file was comb
         lat_degrees: 34.134046
         lon_degrees: -118.321633
       home:
-        alt_meters: 18
+        alt_meters: 18.0
         lat_degrees: 38.879084
         lon_degrees: -77.036531
       mt_wilson:
@@ -162,6 +223,7 @@ You can verify that this worked and see how your new `config.yaml` file was comb
     - localhost:30003
     - localhost:40004
     serial_port: auto
+    telescope_protocol: nexstar-hand-control
     telescope_server: localhost:45345
     tle_files:
     - tle/visual.txt
@@ -197,7 +259,8 @@ It will open a window that looks like this:
 This is an equirectangular projection of the sky. The horizon is the green line at the bottom.
 The top of the screen is straight up. South is in the middle, and North is at the sides.
 The current position of the telescope is the red cross with a circle around it.
-Satellites (and airplanes if you connect an ADS-B receiver) appear as blue crosses with labels.
+Satellites appear as white crosses with labels. Airplanes (if you connect an ADS-B receiver)
+are the same but blue. Coloration is determined by altitude.
 
 The Sun and Moon are drawn too, with big yellow circles around the Sun to help you judge when
 you're getting dangerously close. An important safety feature of NexPlane is that if your telescope
@@ -207,7 +270,7 @@ away from the Sun (because you don't have a physical telescope in HOOTL, your on
 will be to restart `nexplane.py`).
 
 To being tracking a target, click on it. It will turn orange, and the telescope will move
-towards it. You will also notice a lighter orange cross appear nearby. The blue or orange crosses
+towards it. You will also notice a lighter orange cross appear nearby. The white, blue, or orange crosses
 indicate the *last known* positions of targets, updated whenever `nexplane.py` receives an update
 from `dump1090` or `satellites.py`. The lighter orange cross indicates the *current estimated*
 position, based on the last known position, the last known velocity, and how old the data is.
@@ -260,13 +323,38 @@ Once you find a gain set you like, you can add it to `config.yaml`.
         ki: 0.1
         kd: 0.1
 
-### Hook up your telescope
+### Hook up your telescope mount
 
-To use NexPlane with a real telescope, run this on the computer with the telescope attached:
+How you attach your telescope mount to your computer depends on the kind of mount you have.
+
+- If you have a Celestron mount with a NexStar hand controller, connect the hand controller
+  to your computer with a USB cable (or on very old models, a serial cable).
+- If you have a Sky-Watcher mount, you have several choices:
+  - Connect the mount head (**not** the SynScan hand controller) to your computer with a USB cable.
+  - Unplug the SynScan hand controller and plug your computer into the hand controller port on
+    the mount head, using an appropriate cable (sometimes known as an "EQMOD dongle").
+    How to buy or build such a cable is beyond the scope of this document.
+  - If your mount has Wi-Fi, connect your mount and computer to the same Wi-Fi network and
+    determine your mount's IP address. Sky-Watcher's network protocol is unreliable, so this
+    option may cause more jittery control than the others.
+
+Set the `telescope_protocol` option in your `config.yaml` file to describe how you connected
+your telescope to your computer:
+
+    telescope_protocol: nexstar-hand-control
+
+Valid values are:
+- `nexstar-hand-control` is the default, so if you have a Celestron mount then no configuration is needed.
+- `skywatcher-mount-head-usb`
+- `skywatcher-mount-head-eqmod`
+- `skywatcher-mount-head-wifi`
+
+Now, unless you are connecting directly to your mount head with Wi-Fi, run this on the computer with
+the telescope mount attached:
 
     $ ./telescope_server.py
 
-NexStar telescopes plug into your computer using either a serial port (older models) or a USB port
+Celestron and Sky-Watcher mounts plug into your computer using either a serial port (older models) or a USB port
 (newer models). However, even the newer models are just connecting a serial port emulator chip,
 so from the software's perspective it's always just a serial port. By default, `telescope_server.py`
 assumes that you are using a USB telescope and that your telescope is the only USB serial device
@@ -281,12 +369,26 @@ or you may specify this on the command line:
     $ ./telescope_server.py --serial-port /dev/ttyS0
 
 Running `telescope_server.py` will start a server on port 45345 that provides clients the ability
-to send and serial commands to the telescope and receive responses.
+to send serial commands to the telescope and receive responses. This is not necessary if you are
+connecting directly to your mount with Wi-Fi.
 
 Once this is running, restart `nexplane.py` without the `--hootl` option, and it will attach to
 the server and command the telescope.
 
     $ ./nexplane.py
+
+Note that mounts typically store alignment data in the hand controller, not the mount head.
+If you are using a Sky-Watcher mount and have therefore bypassed the hand controller, your
+telescope will not be correctly aligned. You must follow the steps in the
+[Landmark alignment](#landmark-alignment) section.
+
+If you have an equatorial mount, you must specify this in `config.yaml`:
+
+    mount_mode: eq
+
+or you may specify this on the command line:
+
+    $ ./nexplane.py --mount-mode eq
 
 If `nexplane.py` and `telescope_server.py` are running on separate computers, then you will
 have to tell NexPlane where to find the telescope server. You can do this by putting something
@@ -297,6 +399,15 @@ like this in `config.yaml`:
 or you may specify this on the command line:
 
     $ ./nexplane --telescope 192.168.0.5:45345
+
+Note that in the case of separate computers, both computers should have the same `config.yaml` file.
+
+Similarly, if you are using Wi-Fi to connect to your telescope, you must specify the IP and port
+of your mount head in the `telescope_server` config field. If your Sky-Watcher mount is operating
+in access point mode, its IP address will probably be 192.168.4.1. Sky-Watcher mounts accept
+connections on port 11880.
+
+    telescope_server: 192.168.4.1:11880
 
 ### Get airplane data with Dump1090
 
@@ -321,9 +432,10 @@ or you may specify this on the command line:
 
 ### Landmark alignment
 
-The usual way to align your telescope is with its built in alignment routines (SkyAlign,
-Auto Two-Star Align, etc.). These work fine in many conditions, but if none of the required
-celestial objects are visible, NexPlane presents you with another option.
+The usual way to align your telescope mount (if it's a Celestron) is with its built in alignment
+routines (SkyAlign, Auto Two-Star Align, etc.). These work fine in many conditions, but if
+none of the required celestial objects are visible, or if you're using a Sky-Watcher mount,
+NexPlane presents you with another option.
 
 If you can see a landmark on Earth with a known latitude, longitude, and altitude,
 add it to `config.yaml`, like so:
@@ -344,6 +456,13 @@ Now point your telescope at that landmark, and then tell `nexplane.py` that you 
 when you start it up.
 
     $ ./nexplane.py --landmark washington_monument
+
+Alternatively, if you can see a star or planet, tell `nexplane.py` that you're pointing at
+that. Using stars as landmarks requires an internet connection to look them up:
+
+    $ ./nexplane.py --landmark sky:jupiter
+    $ ./nexplane.py --landmark sky:sirius
+    $ ./nexplane.py --landmark sky:betelgeuse
 
 The offset between the known azimuth and elevation to that landmark and the reported azimuth
 and elevation from the telescope will be recorded and compensated for. This is similar to
@@ -369,74 +488,101 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
 
 ## Command line details
 
+Command line options allow you to override most settings in `config.yaml` on a one-time basis.
+The default values for command line options are sourced from the config file, and so will
+be different if you have changed the configuration from the default.
+
 ### `nexplane.py`
 
     $ ./nexplane.py --help
     usage: nexplane.py [-h] [--config CONFIG] [--hootl] [--no-hootl] [--bw]
-                       [--location LOCATION] [--landmark LANDMARK]
-                       [--telescope TELESCOPE] [--sbs1 SBS1]
+                       [--white-bg] [--location LOCATION] [--landmark LANDMARK]
+                       [--telescope TELESCOPE] [--mount-mode MOUNT_MODE]
+                       [--telescope-protocol TELESCOPE_PROTOCOL] [--sbs1 SBS1]
 
     Helps you track airplanes and satellites with a Celestron NexStar telescope mount.
 
-    optional arguments:
+    options:
       -h, --help            show this help message and exit
-      --config CONFIG       Specify an additional config file to be read that takes priority
-                            over config.yaml and config_default.yaml. This option can be
-                            provided multiple times, causing multiple config files to be
-                            read, with later ones taking priority over earlier ones. These
-                            config files may alter the defaults for other command line
-                            arguments, in effect serving as customized short-hand for
-                            complex argument combinations.
+      --config CONFIG       Specify an additional config file to be read that takes
+                            priority over config.yaml and config_default.yaml. This
+                            option can be provided multiple times, causing multiple
+                            config files to be read, with later ones taking priority
+                            over earlier ones. These config files may alter the
+                            defaults for other command line arguments, in effect
+                            serving as customized short-hand for complex argument
+                            combinations.
       --hootl               Do not connect to telescope_server.py, but instead run an
                             internal simulation of the telescope. This is useful for
                             testing.
       --no-hootl            Opposite of --hootl. This is the default
       --bw                  Make the display black and white (this is useful for
-                            increasing contrast when operating in direct
+                            increasing contrast when operating in direct sunlight).
+      --white-bg            Make the display background white (this is useful to read
+                            more easily on dimmer screens when operating in direct
                             sunlight).
-      --white-bg            Make the display background white (this is useful to read more easily
-                            on dimmer screens when operating in direct sunlight).
       --location LOCATION   Where are you? Pick a named location from your config file
-                            (default: home)
-      --landmark LANDMARK   If it is not possible to use the telescope's internal alignment
-                            functions (perhaps because it is cloudy), you can manually point
-                            the telescope at a location listed in your config file, and then
-                            start this program with the --landmark option specifying where
-                            the telescope is pointed. The offset between the known location
-                            and the telescope's reported position will be recorded and
+                            (default: griffith)
+      --landmark LANDMARK   If it is not possible to use the telescope's internal
+                            alignment functions (perhaps because it is cloudy), you
+                            can manually point the telescope at a location listed in
+                            your config file, and then start this program with the
+                            --landmark option specifying where the telescope is
+                            pointed. The offset between the known location and the
+                            telescope's reported position will be recorded and
                             compensated for.
       --telescope TELESCOPE
-                            The host:port of the telescope_server.py process, which talks to
-                            the telescope mount (default: nexstar.local:45345)
-      --mount-mode MODE     Either altaz or eq, corresponding to whether you have an Alt/Az
-                            or equatorial mount.
+                            The host:port of the telescope_server.py process, which
+                            talks to the telescope mount (default: localhost:45345)
+      --mount-mode MOUNT_MODE
+                            Type of telescope mount, either altaz or eq. Default:
+                            altaz
+      --telescope-protocol TELESCOPE_PROTOCOL
+                            Which protocol to use to talk to the telescope (default:
+                            nexstar-hand-control)
       --sbs1 SBS1           The host:port of an SBS1 server for airplane data. You can
-                            specify this argument multiple times in order to receive data
-                            from multiple servers. (default: localhost:30003,
+                            specify this argument multiple times in order to receive
+                            data from multiple servers. (default: localhost:30003,
                             localhost:40004)
 
 ### `telescope_server.py`
 
     $ ./telescope_server.py --help
-    usage: telescope_server.py [-h] [--config CONFIG] [--serial-port SERIAL_PORT]
+    usage: telescope_server.py [-h] [--config CONFIG] [--hootl] [--no-hootl]
+                               [--serial-port SERIAL_PORT]
                                [--network-port NETWORK_PORT]
+                               [--telescope-protocol TELESCOPE_PROTOCOL]
+                               [--location LOCATION] [--mount-mode MOUNT_MODE]
 
-    Exposes the NexStar serial interface on the network.
+    Exposes the telescope serial interface on the network.
 
-    optional arguments:
+    options:
       -h, --help            show this help message and exit
-      --config CONFIG       Specify an additional config file to be read that takes priority
-                            over config.yaml and config_default.yaml. This option can be
-                            provided multiple times, causing multiple config files to be
-                            read, with later ones taking priority over earlier ones. These
-                            config files may alter the defaults for other command line
-                            arguments, in effect serving as customized short-hand for
-                            complex argument combinations.
+      --config CONFIG       Specify an additional config file to be read that takes
+                            priority over config.yaml and config_default.yaml. This
+                            option can be provided multiple times, causing multiple
+                            config files to be read, with later ones taking priority
+                            over earlier ones. These config files may alter the
+                            defaults for other command line arguments, in effect
+                            serving as customized short-hand for complex argument
+                            combinations.
+      --hootl               Do not connect to a telescope via a serial port, but
+                            instead run an internal simulation of the telescope. This
+                            is useful for testing.
+      --no-hootl            Opposite of --hootl. This is the default
       --serial-port SERIAL_PORT
                             Which serial port to use (default: the first port it finds
                             between /dev/ttyUSB0 and /dev/ttyUSB9.)
       --network-port NETWORK_PORT
                             Which network port to use (default: 45345)
+      --telescope-protocol TELESCOPE_PROTOCOL
+                            Which protocol to use to talk to the telescope (default:
+                            nexstar-hand-control)
+      --location LOCATION   Where are you? Pick a named location from your config file
+                            (default: griffith)
+      --mount-mode MOUNT_MODE
+                            Type of telescope mount, either altaz or eq. Default:
+                            altaz
 
 ### `satellites.py`
 
@@ -448,17 +594,141 @@ at 100% utilization (meaning that NexPlane is not taking any time to rest betwee
     nexplane.py can consume in order to point at satellites.
 
     positional arguments:
-      tle_files            TLE files to consume (default: tle/visual.txt, tle/stations.txt)
+      tle_files            TLE files to consume (default: tle/visual.txt,
+                           tle/stations.txt)
 
-    optional arguments:
+    options:
       -h, --help           show this help message and exit
-      --config CONFIG      Specify an additional config file to be read that takes priority
-                           over config.yaml and config_default.yaml. This option can be
-                           provided multiple times, causing multiple config files to be
-                           read, with later ones taking priority over earlier ones. These
-                           config files may alter the defaults for other command line
-                           arguments, in effect serving as customized short-hand for complex
-                           argument combinations.
+      --config CONFIG      Specify an additional config file to be read that takes
+                           priority over config.yaml and config_default.yaml. This
+                           option can be provided multiple times, causing multiple
+                           config files to be read, with later ones taking priority
+                           over earlier ones. These config files may alter the
+                           defaults for other command line arguments, in effect
+                           serving as customized short-hand for complex argument
+                           combinations.
       --location LOCATION  Where are you? Pick a named location from your config file
-                           (default: home)
+                           (default: griffith)
       --port PORT          Port to run the SBS-1 server on (default: 40004)
+
+## Advanced software testing
+
+If you are making changes to NexPlane, or you are having trouble and want a more
+complete check that the software is good independently of your physical telescope
+mount, you can run the full HOOTL test suite.
+
+This will run the MyPy static type checker for Python, and then start NexPlane
+over and over again in a variety of configurations. For each such test, the
+NexPlane window will open up and you can interact with it. When you close the window,
+NexPlane will start again with a different configuration. There are currently 10
+such tests.
+
+    $ ./run_test.py
+
+
+    TEST 0: MyPy
+    mypy dump_config.py nexplane.py rpc_client_test.py rpc_server_test.py run_test.py satellites.py skywatcher_wifi_hootl.py telescope_server.py
+    Success: no issues found in 8 source files
+
+
+    TEST 1: NexStar mount in Alt-Az mode
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol nexstar-hand-control --mount-mode altaz
+    Listening on port 40004
+    New connection
+
+
+    TEST 2: NexStar mount in Equatorial mode
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol nexstar-hand-control --mount-mode eq
+    Listening on port 40004
+    New connection
+
+
+    TEST 3: Sky-Watcher mount with USB in Alt-Az mode
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode altaz
+    Listening on port 40004
+    New connection
+
+
+    TEST 4: Sky-Watcher mount with USB in Equatorial mode, Black and white
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode eq --bw
+    Listening on port 40004
+    New connection
+
+
+    TEST 5: Sky-Watcher mount with EQMOD, White and black
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-eqmod --mount-mode eq --bw --white-bg
+    Listening on port 40004
+    New connection
+
+
+    TEST 6: Sky-Watcher mount with WiFi, White and color
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./nexplane.py --hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-wifi --mount-mode eq --white-bg
+    Listening on port 40004
+    New connection
+
+
+    TEST 7: Server mode - NexStar mount
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./telescope_server.py --hootl --location griffith --network-port 45345 --telescope-protocol nexstar-hand-control --mount-mode altaz
+    ./nexplane.py --no-hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol nexstar-hand-control --mount-mode altaz --telescope localhost:45345
+    Listening on port 40004
+    Starting RPC server...
+    Ready.
+    New connection
+
+
+    TEST 8: Server mode - Sky-Watcher mount with USB
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./telescope_server.py --hootl --location griffith --network-port 45345 --telescope-protocol skywatcher-mount-head-usb --mount-mode altaz
+    ./nexplane.py --no-hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-usb --mount-mode altaz --telescope localhost:45345
+    Starting RPC server...
+    Ready.
+    Listening on port 40004
+    New connection
+
+
+    TEST 9: Server mode - Sky-Watcher mount with EQMOD
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./telescope_server.py --hootl --location griffith --network-port 45345 --telescope-protocol skywatcher-mount-head-eqmod --mount-mode altaz
+    ./nexplane.py --no-hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-eqmod --mount-mode altaz --telescope localhost:45345
+    Starting RPC server...
+    Ready.
+    Listening on port 40004
+    New connection
+
+
+    TEST 10: Server mode - Sky-Watcher mount with WiFi
+    ./satellites.py tle/geo.txt --location griffith --port 40004
+    ./skywatcher_wifi_hootl.py 45345
+    ./nexplane.py --no-hootl --location griffith --landmark hollywood_sign --sbs1 localhost:40004 --telescope-protocol skywatcher-mount-head-wifi --mount-mode altaz --telescope localhost:45345
+    Listening on port 40004
+    New connection
+
+All of the tests run `satellites.py`.
+
+    $ ./satellites.py
+
+Some of these tests are the simple HOOTL simulation described above, performed by
+passing --hootl on the command line to `nexplane.py`.
+
+    $ ./nexplane.py --hootl
+
+Others are more advanced and test the network connection between `nexplane.py`
+and `telescope_server.py`. In these tests, `nexplane.py` doesn't know it's a test:
+
+    $ ./nexplane.py
+
+and `telescope_server.py` is running the simulator:
+
+    $ ./telescope_server.py --hootl
+
+There's also a separate simulator that impersonates a Sky-Watcher Wi-Fi mount,
+used to test that protocol.
+
+    $ ./skywatcher_wifi_hootl.py

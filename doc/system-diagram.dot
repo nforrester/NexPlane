@@ -16,15 +16,19 @@ digraph diagram {
 
         nexplane -> bridge;
         bridge -> nexplane;
-        bridge -> nexstar;
-        nexstar -> bridge;
+        bridge -> wired_mount;
+        wired_mount -> bridge;
+
+        nexplane -> wifi_mount;
+        wifi_mount -> nexplane;
 
         CelesTrak [label="celestrak.com", shape=box, style=filled, color=black, fillcolor=lightblue];
         antenna [label="1090MHz Antenna", shape=box, style=filled, color=black, fillcolor=grey];
         adsb [label="ADS-B Receiver", shape=box, style=filled, color=black, fillcolor=grey];
         nexplane [label="nexplane.py" style=filled, color=black, fillcolor=lightgreen];
         bridge [label="telescope_server.py"];
-        nexstar [label="NexStar Telescope Mount", shape=box, style=filled, color=black, fillcolor=grey];
+        wired_mount [label="Wired Telescope Mount", shape=box, style=filled, color=black, fillcolor=grey];
+        wifi_mount [label="Wi-Fi Telescope Mount", shape=box, style=filled, color=black, fillcolor=grey];
         tle_proc [label="satellites.py"];
         files [label="TLE Files", shape=box, style=filled, color=black, fillcolor=yellow];
         Airplanes [shape=box, style=filled, color=black, fillcolor=lightblue];
