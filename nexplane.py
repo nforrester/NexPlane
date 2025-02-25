@@ -93,8 +93,29 @@ def main() -> None:
     ki = config_data['gains']['ki']
     kd = config_data['gains']['kd']
 
-    # Run the GUI.
-    gui_iface = gui.Gui(args.bw, args.white_bg, kp, ki, kd, (args.mount_mode == 'eq'), observatory_location)
+    # Build and run the GUI.
+    layers: list[gui.GuiLayer] = []
+    if args.mount_mode == 'eq':
+        layers.append(gui.EqFrameLayer(observatory_location))
+    layers.append(gui.HorizonLayer())
+
+    gui_airplanes = gui.AirplaneLayer()
+    gui_gain_reader = gui.GainReaderLayer(kp, ki, kd)
+    gui_offset_reader = gui.OffsetReaderLayer()
+    gui_sun_moon = gui.SunMoonLayer()
+    gui_telescope = gui.TelescopeLayer()
+    gui_comm_warning = gui.CommWarningLayer()
+
+    layers.extend([
+        gui_airplanes,
+        gui_gain_reader,
+        gui_offset_reader,
+        gui_sun_moon,
+        gui_telescope,
+        gui_comm_warning,
+    ])
+
+    gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
     while True:
         try:
@@ -142,7 +163,7 @@ def main() -> None:
             warn_comm_failure = False
             while True:
                 try:
-                    gui_iface.update_comm_failure(warn_comm_failure)
+                    gui_comm_warning.update_comm_failure(warn_comm_failure)
 
                     time.sleep(0.05)
 
@@ -161,13 +182,15 @@ def main() -> None:
                         scope_azm_alt = (scope_azm, scope_alt)
 
                     # Send new data to the to GUI so it can update the drawing.
-                    gui_iface.provide_update(scope_azm_alt=scope_azm_alt,
-                                             sun_azm_alt=unwrap(sun.az_el()),
-                                             moon_azm_alt=unwrap(moon.az_el()),
-                                             airplanes=planes)
+                    gui_sun_moon.update_positions(sun_azm_alt=unwrap(sun.az_el()),
+                                                  moon_azm_alt=unwrap(moon.az_el()))
+                    gui_telescope.update_telescope_location(scope_azm_alt)
+                    gui_airplanes.update_planes(planes)
 
                     # Receive new user inputs from the GUI.
-                    tracked_plane_hex_id, az_offset, el_offset, kp, ki, kd, gain_changes = gui_iface.get_inputs()
+                    tracked_plane_hex_id = gui_airplanes.get_tracked_plane()
+                    az_offset, el_offset = gui_offset_reader.get_offsets()
+                    kp, ki, kd, gain_changes = gui_gain_reader.get_gains()
 
                     # If the user requested a change to the controller gains, update them accordingly.
                     if last_gain_changes != gain_changes:
@@ -179,7 +202,8 @@ def main() -> None:
                         # We've strayed into the keep out circle around the Sun! Emergency Stop!
                         # The user can fix this with the hand controller.
                         target_tracker.stop()
-                        gui_iface.stop_tracking()
+                        gui_airplanes.stop_tracking()
+                        gui_offset_reader.reset_offsets()
                     elif tracked_plane_hex_id is None:
                         # There is no airplane to track, so stop the tracker.
                         target_tracker.stop()
@@ -201,7 +225,8 @@ def main() -> None:
                     else:
                         # If no data is available for the target, stop tracking and inform the GUI of that fact.
                         target_tracker.stop()
-                        gui_iface.stop_tracking()
+                        gui_airplanes.stop_tracking()
+                        gui_offset_reader.reset_offsets()
 
                     # If we got to the end of the loop, communication is ok.
                     warn_comm_failure = False
