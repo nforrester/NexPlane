@@ -214,7 +214,8 @@ def main() -> None:
                             unwrap(tracked_plane.az.value) + az_offset,
                             observatory_location,
                             util.get_current_time())
-                        target_tracker.go(tracked_plane_ra - ra_cal, tracked_plane_dec - dec_cal)
+                        target_tracker.go(util.wrap_rad(tracked_plane_ra - ra_cal, scope_ra_raw - math.pi),
+                                          util.wrap_rad(tracked_plane_dec - dec_cal, scope_dec_raw - math.pi))
                 else:
                     # If no data is available for the target, stop tracking and inform the GUI of that fact.
                     target_tracker.stop()
