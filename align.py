@@ -4,31 +4,20 @@
 
 import argparse
 import datetime
-import math
-import numpy
-import sys
-import time
-import traceback
 import yaml
 
-import astropy.time
 import astropy.coordinates as coords
 import astropy.units as units
 
 from typing import Any
 
-import astronomical
 import config
-import gui
 import mount_base
 import nexstar
-import rpc
 import skywatcher
-import sbs1
-import tracker
 import util
 
-from util import unwrap, VALID_MOUNT_MODES, VALID_TELESCOPE_PROTOCOLS, SKYWATCHER_TELESCOPE_PROTOCOLS
+from util import SKYWATCHER_TELESCOPE_PROTOCOLS
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
