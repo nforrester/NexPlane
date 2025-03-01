@@ -524,6 +524,10 @@ class SkyWatcher(Mount):
         self.rate[1] = 0.0
         self.rate[2] = 0.0
 
+        self.stop_commanded = dict()
+        self.stop_commanded[1] = True
+        self.stop_commanded[2] = True
+
         self.position_filter = dict()
         self.position_filter[1] = PositionFilter('RA: ')
         self.position_filter[2] = PositionFilter('Dec:')
@@ -624,13 +628,17 @@ class SkyWatcher(Mount):
         '''Slew the axis at the specified rate, in radians/second.'''
         if rate == 0 or (self.rate[axis] * rate < 0):
             self._speak(':K' + str(axis), 0)
+            self.stop_commanded[axis] = True
             if not self._inquire_status(axis).running:
                 self.rate[axis] = 0
             return
 
-        if self.rate[axis] == 0:
+        if self.stop_commanded[axis]:
             if self._inquire_status(axis).running:
+                self._speak(':K' + str(axis), 0)
                 return
+            else:
+                self.rate[axis] = 0
             if rate > 0:
                 self._set_motion_mode(axis, True, False)
             else:
@@ -641,6 +649,7 @@ class SkyWatcher(Mount):
 
         if self.rate[axis] == 0:
             self._speak(':J' + str(axis), 0)
+            self.stop_commanded[axis] = False
 
         self.rate[axis] = rate
 
