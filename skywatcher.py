@@ -565,6 +565,8 @@ class SkyWatcher(Mount):
         self.position_filter[1] = PositionFilter('RA: ')
         self.position_filter[2] = PositionFilter('Dec:')
 
+        self.start_time = time.time()
+
     def _speak(self, command: str, response_len: int) -> str:
         '''Helper function that calls self.serial_port.speak() and validates the response length.'''
         response = self.serial_port.speak(command)
@@ -623,7 +625,12 @@ class SkyWatcher(Mount):
         RA and Dec values are NOT aligned with the meridian or equator,
         and must be externally calibrated.
         '''
-        ra = -self._inquire_position(1)
+        seconds_per_sidereal_day = 86164.0905
+        radians_per_sidereal_day = 2 * math.pi
+        radians_per_second = radians_per_sidereal_day / seconds_per_sidereal_day
+        ra_offset = radians_per_second * (time.time() - self.start_time)
+
+        ra = -self._inquire_position(1) + ra_offset
         dec = self._inquire_position(2)
         return ra, dec
 
