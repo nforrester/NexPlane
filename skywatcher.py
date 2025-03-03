@@ -36,7 +36,7 @@ import sys
 from dataclasses import dataclass
 
 from mount_base import Client, Mount, CommError, speak_delay, TrackingMode
-from util import unwrap
+from util import unwrap, wrap_rad
 
 class UnreliableCommError(Exception):
     '''Raised when the telescope does not respond, but this may be a fluke.'''
@@ -413,6 +413,35 @@ def decode_int_6(s:str) -> int:
     h = s[4:6] + s[2:4] + s[0:2]
     return int(h, 16)
 
+class CountUnwrapper:
+    '''
+    Track gradual changes in an limited-width unsigned integer that may wrap around at specified bounds,
+    and return a signed integer with unlimited range.
+    '''
+    def __init__(self, min_value: int, max_value: int) -> None:
+        self.old: int | None = None
+        self.wraps = 0
+
+        assert min_value < max_value
+        self.min_value = min_value
+        self.max_value = max_value
+        self.range = max_value - min_value
+        quarter_range = int(0.25 * self.range)
+        self.wrap_zone_lo = self.max_value - quarter_range
+        self.wrap_zone_hi = self.min_value + quarter_range
+
+    def unwrap(self, new: int) -> int:
+        if self.old is None:
+            self.old = new
+            return new
+        assert self.min_value <= new and new <= self.max_value
+        if self.wrap_zone_lo <= new and self.old <= self.wrap_zone_hi:
+            self.wraps -= 1
+        elif self.wrap_zone_lo <= self.old and new <= self.wrap_zone_hi:
+            self.wraps += 1
+        self.old = new
+        return self.wraps * self.range + new
+
 class PositionFilter:
     '''
     Simple Kalman-inspired filter that tries to reject sudden changes
@@ -450,7 +479,7 @@ class PositionFilter:
 
         def update_proposed_lock() -> None:
             if self.proposed_position is not None:
-                if abs(new_position - self.proposed_position) < pos_tol:
+                if abs(wrap_rad(new_position, self.proposed_position - math.pi) - self.proposed_position) < pos_tol:
                     self.proposed_persistence += 1
                 else:
                     print(now, self.label, 'Reset proposed lock.')
@@ -471,7 +500,7 @@ class PositionFilter:
             return True
         # We have an existing lock.
 
-        if abs(new_position - self.locked_position) < pos_tol:
+        if abs(wrap_rad(new_position, self.locked_position - math.pi) - self.locked_position) < pos_tol:
             # This is within tolerance, so accept the update.
             self.locked_position = new_position
             self.locked_update_time = now
@@ -528,6 +557,10 @@ class SkyWatcher(Mount):
         self.stop_commanded[1] = True
         self.stop_commanded[2] = True
 
+        self.count_unwrapper = dict()
+        self.count_unwrapper[1] = CountUnwrapper(0, 0xffffff)
+        self.count_unwrapper[2] = CountUnwrapper(0, 0xffffff)
+
         self.position_filter = dict()
         self.position_filter[1] = PositionFilter('RA: ')
         self.position_filter[2] = PositionFilter('Dec:')
@@ -577,6 +610,7 @@ class SkyWatcher(Mount):
         '''Where is the axis, in radians?'''
         r = self._speak(':j' + str(axis), 6)
         v = decode_int_6(r)
+        v = self.count_unwrapper[axis].unwrap(v)
         position = v / self.cpr[axis] * 2 * math.pi
         if self.position_filter[axis].update(position):
             return position
