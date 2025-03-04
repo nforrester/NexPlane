@@ -134,6 +134,8 @@ def add_arg_landmark(parser: argparse.ArgumentParser, config_data: dict[str, Any
     def v(args: argparse.Namespace) -> None:
         if not args.landmark:
             return
+        if args.landmark.startswith('sky:'):
+            return
         if args.landmark not in config_data['locations']:
             raise Exception('Error, invalid --landmark ' + repr(args.landmark) +
                             '. Valid values are: ' + (', '.join(config_data['locations'].keys())))
