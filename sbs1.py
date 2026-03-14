@@ -179,6 +179,8 @@ class Sbs1Receiver:
     '''
     def __init__(self, plane_servers: list[str], observatory: coords.EarthLocation):
         '''Start all the threads and processes that do the work.'''
+        multiprocessing.set_start_method('fork')
+
         # For each server, start a new multiprocessing.Process to receive data from it.
         # Each process has an associated multiprocessing.Queue to emit data
         # (sock_to_compute_qs).
