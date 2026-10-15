@@ -48,6 +48,7 @@ def run_mypy() -> None:
         'run_test.py',
         'satellites.py',
         'skywatcher_wifi_hootl.py',
+        'teach_limits.py',
         'telescope_server.py',
     ])
 
