@@ -3,6 +3,7 @@
 '''Tool for creating saved alignment files that can be loaded by nexplane.py in lieu of landmark alignment.'''
 
 import argparse
+import math
 import datetime
 import yaml
 
@@ -11,7 +12,9 @@ import astropy.units as units
 
 from typing import Any
 
+import axis_limits
 import config
+import eq_flip
 import mount_base
 import nexstar
 import skywatcher
@@ -133,9 +136,23 @@ def ra_dec_cal(
     init_real_azm, init_real_alt = get_landmark_azm_alt(landmark, config_data, observatory_location)
     init_real_ra, init_real_dec = util.altaz_to_radec(init_real_alt, init_real_azm, observatory_location, util.get_current_time())
     init_scope_ra, init_scope_dec = telescope.get_ra_dec()
-    ra_cal = util.wrap_rad(init_real_ra - init_scope_ra, 0)
-    dec_cal = util.wrap_rad(init_real_dec - init_scope_dec, 0)
-    return ra_cal, dec_cal
+    # Determine the pole side from the taught home position (see eq_flip.calibrate).
+    home_dec_raw = home_dec_raw_from_config(config_data)
+    ra_cal, dec_cal, side = eq_flip.calibrate(init_real_ra, init_real_dec, init_scope_ra, init_scope_dec, home_dec_raw)
+    print(f'Aligned on side {side}' + ('' if home_dec_raw is not None else
+          ' (assumed; without a safe area the side cannot be checked)'))
+    return util.wrap_rad(ra_cal, 0), util.wrap_rad(dec_cal, 0)
+
+def home_dec_raw_from_config(config_data: dict[str, Any]) -> float | None:
+    '''Dec axis position of the home position from the limits file, if set up.'''
+    settings = axis_limits.get_settings(config_data)
+    if settings is None or not settings['file']:
+        return None
+    try:
+        limits = axis_limits.load_limits(axis_limits.resolve_path(settings['file']))
+    except axis_limits.LimitError:
+        return None
+    return float(limits['home_deg'][2]) / 180 * math.pi
 
 def main() -> None:
     args, config_data = parse_args_and_config()
