@@ -299,10 +299,13 @@ the telescope mount attached:
 Celestron and Sky-Watcher mounts plug into your computer using either a serial port (older models) or a USB port
 (newer models). However, even the newer models are just connecting a serial port emulator chip,
 so from the software's perspective it's always just a serial port. By default, `telescope_server.py`
-assumes that you are using a USB telescope and that your telescope is the only USB serial device
-connected. As such, it scans through `/dev/ttyUSB0` to `/dev/ttyUSB9` and picks the first device
-it finds. If you wish to override this behavior to pick (for example) `/dev/ttyS0`, you may put a
-line like this in `config.yaml`:
+assumes that you are using a USB telescope. It scans the `/dev/ttyUSB*` devices and picks the first
+one whose kernel driver is a typical USB serial adapter (`pl2303`, `ch341`, `cp210x`, `ftdi_sio`).
+Ports of cellular modems (for example a laptop's built-in LTE modem, drivers `option`, `qcserial`,
+`sierra`) are never used; any other port is the fallback. `./mount_check.py` lists the serial
+ports with their drivers and the processes that have them open, and sends a few version queries
+to the mount, which helps when the mount does not answer. If you wish to override this behavior
+to pick (for example) `/dev/ttyS0`, you may put a line like this in `config.yaml`:
 
     serial_port: /dev/ttyS0
 
@@ -532,8 +535,9 @@ be different if you have changed the configuration from the default.
                             testing.
       --no-hootl            Opposite of --hootl. This is the default
       --serial-port SERIAL_PORT
-                            Which serial port to use (default: the first port it finds
-                            between /dev/ttyUSB0 and /dev/ttyUSB9.)
+                            Which serial port to use (default: the first USB serial
+                            adapter it finds among /dev/ttyUSB*; cellular modems are
+                            skipped.)
       --network-port NETWORK_PORT
                             Which network port to use (default: 45345)
       --telescope-protocol TELESCOPE_PROTOCOL

@@ -42,6 +42,7 @@ def run_mypy() -> None:
         'mypy',
         'align.py',
         'dump_config.py',
+        'mount_check.py',
         'nexplane.py',
         'rpc_client_test.py',
         'rpc_server_test.py',

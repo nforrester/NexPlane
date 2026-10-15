@@ -57,6 +57,36 @@ def read_response(telescope: serial.Serial, telescope_protocol: str) -> str:
         response += telescope.read().decode(encoding='ISO-8859-1')
     return response
 
+# Drivers of USB-serial adapters as found in control boxes and EQMOD cables.
+MOUNT_DRIVERS = ('pl2303', 'ch341', 'ch341-uart', 'cp210x', 'ftdi_sio')
+# Drivers of cellular modems (e.g. a laptop's built-in LTE modem): never use.
+MODEM_DRIVERS = ('option', 'option1', 'qcserial', 'sierra', 'qmi_wwan', 'cdc_mbim')
+
+def serial_driver(tty: str) -> str:
+    '''Name of the kernel driver behind a serial port (e.g. pl2303), or an empty string.'''
+    try:
+        return os.path.basename(os.path.realpath(f'/sys/class/tty/{os.path.basename(tty)}/device/driver'))
+    except OSError:
+        return ''
+
+def find_mount_port() -> str | None:
+    '''
+    Attempt to find the mount's serial port automatically. There will probably be one USB serial
+    adapter (/dev/ttyUSB*), and that will probably be the correct port. However, LTE modems may
+    also appear in the /dev/ttyUSB* range, so try to differentiate between these by checking which
+    driver they use.
+    '''
+    candidates = [f'/dev/ttyUSB{i}' for i in range(32) if os.path.exists(f'/dev/ttyUSB{i}')]
+    for port in candidates:
+        if serial_driver(port) in MOUNT_DRIVERS:
+            print(f'Mount probably at {port} (driver {serial_driver(port)})')
+            return port
+    for port in candidates:
+        if serial_driver(port) not in MODEM_DRIVERS:
+            print(f'Mount probably at {port} (driver {serial_driver(port) or "unknown"})')
+            return port
+    return None
+
 def hello() -> str:
     return 'hello'
 
@@ -145,7 +175,7 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     parser.add_argument(
         '--serial-port', default=config_data['serial_port'],
         help='Which serial port to use (default: ' +
-             ('the first port it finds between /dev/ttyUSB0 and /dev/ttyUSB9.'
+             ('the first USB serial adapter it finds among /dev/ttyUSB*; cellular modems are skipped.'
               if config_data['serial_port'] == 'auto' else config_data['serial_port']) + ')')
 
     parser.add_argument(
@@ -172,12 +202,7 @@ def main() -> None:
         observatory_location = None
         serial_port = args.serial_port
         if serial_port == 'auto':
-            serial_port = None
-            for i in range(10):
-                this_port = f'/dev/ttyUSB{i}'
-                if os.path.exists(this_port):
-                    serial_port = this_port
-                    break
+            serial_port = find_mount_port()
             if serial_port is None:
                 print('Unable to find serial port for telescope.')
                 sys.stdout.flush()
