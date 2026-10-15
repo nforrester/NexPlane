@@ -425,6 +425,213 @@ the mount then the alignment data is invalidated.
 
     $ ./nexplane.py --alignment align.yaml
 
+## Optional features
+
+These features are off or invisible unless you use them. Most of them were developed for a
+Sky-Watcher EQ5 in equatorial mode, controlled from a browser.
+
+### Axis soft limits (Sky-Watcher)
+
+A long tube on an equatorial mount can hit the tripod or the pier. NexPlane can keep a
+Sky-Watcher mount inside a taught area of axis positions. Every motion command is checked:
+both axes are slowed down together before the edge of the area (minus a safety margin), and
+the mount is stopped at once if an axis moves against the commanded direction.
+
+The area is a polygon in the two raw axis angles relative to the position at power-on, so it
+does not depend on alignment, but it is only valid if the mount is switched on at the same
+home position every time. Teach it with `teach_limits.py`:
+
+1. Put the mount into its home position (e.g. counterweight down, tube toward the pole), then
+   switch it on.
+2. Start `telescope_server.py` (not needed with `--hootl`), then
+   `./teach_limits.py --telescope-protocol skywatcher-mount-head-usb`.
+3. Drive once around the edge of the safe area with the arrow keys and press `m` at each
+   corner, in order. Press `g` for an SVG preview, `s` to save, `q` to quit.
+
+Then enable it in `config.yaml`:
+
+```yaml
+axis_limits:
+    file: limits.yaml
+    margin_degrees: 3.0           # distance kept from the taught edge
+    lookahead_seconds: 1.0        # how far ahead the motion is predicted
+    require_home_at_start: true   # refuse to start away from the taught home position
+    home_tolerance_degrees: 1.0
+    wrong_way_trip_degrees: 0.5   # emergency stop if an axis moves the wrong way this far
+```
+
+`./teach_limits.py --check` loads the saved area and enables the guard, so you can test it by
+driving into the edge. This is a software protection: it does not replace supervision or a
+reachable power switch.
+
+#### Exclusion zones
+
+Areas inside the outline that the mount must not enter, for example where the back of a long
+tube hits the pier. In `teach_limits.py` press `n` to start a zone, `m` for its corners and `e`
+to end it. `--edit` loads an existing file, e.g. to add zones later.
+
+#### Profiles
+
+Different setups on the same mount (long tube, small camera) can have their own areas:
+
+```yaml
+axis_limits:
+    profiles:
+        tube: limits_tube.yaml
+        camera: limits_camera.yaml
+    profile: tube                 # used at start
+```
+
+Teach each one with `./teach_limits.py --profile camera`. All profiles must be taught at the
+same home position.
+
+### Meridian flip (equatorial Sky-Watcher mounts)
+
+In equatorial mode almost every point of the sky can be reached on two pier sides. NexPlane
+uses both sides: it picks the side where a new target stays reachable longest and flips
+when the current side runs into the axis limits. Without axis limits it stays on the side it is
+on. Settings:
+
+```yaml
+meridian_flip: true                 # automatic side change (needs axis_limits)
+max_slew_degrees_per_second: 5.0    # speed limit for flips and slews
+```
+
+If axis limits are set up, the alignment (landmark or `align.py`) may be done on either side;
+the taught home position tells NexPlane which side it was.
+
+### Browser GUI
+
+`./nexplane.py --web` shows NexPlane in a web browser instead of the OpenGL window: a sky view
+and a ground map (OpenStreetMap, needs internet), the list of aircraft, the tracked target with
+links to flight tracking sites, correction and controller gains. Click an aircraft to track it;
+`Esc` stops. The keyboard controls of the OpenGL GUI work in the page as well.
+
+The page is served on `http://127.0.0.1:8765/` only (`--web-port` or `web_port` in
+`config.yaml` to change), and every request needs a token that changes with each start, so other
+web pages cannot control the mount. `web_gui: true` in `config.yaml` makes `--web` the default;
+`--no-browser` does not open a browser. GLUT is not needed for `--web`.
+
+The page can be switched between English and German (selector in the header; the default
+follows the browser). Translations are in `webgui_static/i18n_de.js`.
+
+In equatorial mode the header shows the pier side, and "Test side change" in the Meridian flip
+card holds the current direction and drives to it on the other side of the pole.
+
+#### Manual control and alignment in the browser
+
+With a Sky-Watcher mount in equatorial mode the card "Control & alignment" moves the axes
+(hold the arrow buttons or arrow keys), drives back to the home position and aligns NexPlane:
+point the telescope at a landmark (another location from `config.yaml`) or at a star or planet,
+then press "Telescope points at it now – align". The alignment is saved as `align.yaml`.
+Aircraft are only tracked after an alignment.
+
+The card "Safe area" shows the active limits profile and switches between profiles (the mount
+is stopped for this).
+
+"Disable safe area" switches the axis limits off at your own risk, for example to align on a
+landmark outside the area. A red banner is shown and tracking is blocked until the limits are
+switched on again; the wrong-direction stop stays active.
+
+"Position relative to home" shows the axis angles relative to the taught home position. At
+home it must be about 0°/0°; otherwise the mount was switched on elsewhere and the limits are
+shifted.
+
+#### Blind areas
+
+After alignment, the sky view and the ground map tint the directions the mount cannot reach
+within the axis limits on either pier side. On the map this is shown for aircraft at the flight
+altitude selected in the "Safe area" card.
+
+The card "Location" switches between the locations in `config.yaml`; NexPlane stops the mount
+and restarts itself with the new location.
+
+#### Correction in the camera image (equatorial mode)
+
+In equatorial mode with the browser GUI the correction keys (W/A/S/D, the arrow buttons of the
+Correction card) move the target in the camera image instead of in azimuth/elevation, the same
+way wherever the telescope points and on both pier sides. The correction is kept for all
+aircraft.
+
+#### Sync points and pointing model
+
+When the tracked aircraft is centred, "Accept (sync point)" stores where the mount points and
+where the aircraft really is. NexPlane then refits its alignment; from three points in clearly
+different directions it also fits the polar axis misalignment and shows it, e.g. "0.8° too
+low, 1.1° too far east", which helps adjusting the mount. Points that fit badly are marked and
+can be deleted.
+
+Without a landmark, select an aircraft before aligning: it becomes an "aiming target", NexPlane
+does not move, you centre it by hand and accept it; this first point aligns NexPlane. After
+each alignment the direction of the mount at its home position is saved in
+`home_direction.yaml`, so on the next start NexPlane is roughly aligned right away if the mount
+was switched on at home.
+
+Each sync point records the focal length selected in the Correction card; points taken with a
+longer focal length count more in the fit. Settings: `focal_lengths_mm: [150, 300, 600]`,
+`focal_length_mm` (start value), `sensor_width_mm: 23.5`.
+
+"Forget alignment" discards sync points, model and correction (and on request
+`home_direction.yaml`), e.g. after tests indoors.
+
+### Gamepad
+
+A gamepad (tested with a PS4 controller over Bluetooth) controls NexPlane together with the
+browser GUI; the browser does not need focus. It is read from `/dev/input` directly (you may
+need `sudo usermod -aG input $USER`); `./gamepad.py --test` shows the buttons and axes.
+
+| Control | While tracking | Otherwise |
+| --- | --- | --- |
+| Left stick | correction | move the mount |
+| Right stick | fine correction | slow move |
+| R2 | faster | faster |
+| D-pad | small correction steps | |
+| ✕ / □ / ○ | accept sync point / delete last point / correction to 0 | |
+| △ | stop | stop |
+| R1 / L1 | next nearest reachable aircraft / previous | |
+| Options | next focal length | |
+
+```yaml
+gamepad:
+    enabled: true
+    name: ''             # part of the device name; empty = first gamepad
+    invert_x: false      # adapt the stick to the camera orientation
+    invert_y: false
+    swap_xy: false
+```
+
+All rates and the dead zone can be set in the same section (see `pad_control.DEFAULTS`).
+
+### Tracking logs
+
+With the browser GUI in equatorial mode, NexPlane writes `logs/tracking_<time>.csv` (about 5
+rows per second while tracking) and `logs/sync_points.csv`, for measuring ADS-B latency and
+pointing errors. `track_log: false` turns this off.
+
+#### Places editor
+
+"Add locations & landmarks" in the Location card picks a point on a map (OpenStreetMap or
+satellite imagery) and saves it as a location or as a landmark for alignment. Entries are stored
+in `places.yaml` next to `config.yaml`, which itself is never changed.
+
+If the computer has a WWAN modem with GPS that ModemManager can read (`mmcli`), the Location
+card shows the GPS position, warns when the selected location is more than 300 m away and can
+fill in the editor from it. `./gps_check.py` checks whether the modem delivers a position.
+`gps: false` turns this off.
+
+Clicking on the map fills in the ground elevation from public elevation services (OpenTopoData
+EU-DEM, Open-Meteo); for landmarks add the height of the building.
+
+#### Refining the limits
+
+"Refine limits" in the Safe area card helps to move the taught edge outward where it was
+taught too conservatively: with the safe area disabled, drive the telescope carefully toward the
+real limit and accept the position as a new corner of the outline (or of an exclusion zone, which
+then gets smaller). A crosshair on the map and in the sky view shows where the telescope
+points. Points can be undone, saved (the previous file is kept as `.bak`) or discarded.
+
+While refining, the gamepad stick moves the crosshair on the map: up = north, right = east.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
