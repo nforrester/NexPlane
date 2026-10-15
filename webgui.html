@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexPlane</title>
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel2: #1f2630; --line: #2d3540;
+  --text: #d6dde6; --muted: #8b96a3; --accent: #58a6ff;
+  --plane: #6ea8ff; --sat: #9aa4ae; --track: #ff8a3d; --track2: #ffc29a;
+  --scope: #ff4d4d; --sun: #ffd400; --moon: #c8c8c8; --eq: #b05cff; --eq2: #4a3260;
+  --horizon: #3fae5a; --grid: #26303b; --warn: #ff4d4d; --ok: #3fae5a;
+  --blind: rgba(255, 77, 77, 0.24);
+}
+body.red {
+  --bg: #0a0000; --panel: #140000; --panel2: #1e0303; --line: #3a0a0a;
+  --text: #ff5a4a; --muted: #a0352c; --accent: #ff6a55;
+  --plane: #ff6a55; --sat: #a0352c; --track: #ffb0a0; --track2: #ff8a7a;
+  --scope: #ffb3a7; --sun: #ffb000; --moon: #a0352c; --eq: #c0392b; --eq2: #3a0a0a;
+  --horizon: #c0392b; --grid: #2a0606; --warn: #ffffff; --ok: #ff6a55;
+  --blind: rgba(255, 180, 160, 0.16);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+       display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+header { display: flex; align-items: center; gap: 14px; padding: 8px 14px; background: var(--panel);
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: .5px; }
+.tabs { display: flex; gap: 4px; }
+.tabs button, .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                     border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; }
+.tabs button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.btn:hover, .tabs button:hover { border-color: var(--accent); }
+.btn.danger { border-color: var(--warn); color: var(--warn); }
+.pill { font-variant-numeric: tabular-nums; color: var(--muted); }
+.pill b { color: var(--text); font-weight: 600; }
+.spacer { flex: 1; }
+#banner { display: none; background: var(--warn); color: #000; font-weight: 700; text-align: center; padding: 8px; }
+#banner.show { display: block; }
+#place-wrap { position: relative; height: 240px; margin-top: 8px; }
+#place-wrap #place-map { position: absolute; inset: 0; border-radius: 6px; }
+#place-wrap.full { position: fixed; inset: 0; height: auto; margin: 0; z-index: 3000; background: var(--bg); }
+#place-wrap.full #place-map { border-radius: 0; bottom: 44px; }
+#place-bar { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; padding: 6px 10px; gap: 10px;
+           align-items: center; background: var(--panel, #1b1f27); font-size: 14px; }
+#place-wrap.full #place-bar { display: flex; }
+#place-fs { position: absolute; top: 10px; right: 54px; z-index: 1000; padding: 2px 8px; }
+/* Let the inputs of the places editor shrink to the card width (long option texts would overflow) */
+#place-edit .kv > input, #place-edit .kv > select { min-width: 0; width: 100%; }
+#limbanner { display: none; background: #d01010; color: #fff; font-weight: 700; text-align: center; padding: 8px; }
+#limbanner.show { display: block; }
+main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+#view { position: relative; min-height: 0; }
+#sky, #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+#map { display: none; background: var(--bg); }
+#map.leaflet-container { background: var(--bg); }
+/* Night view for the main map; the map for picking locations stays unaltered (satellite imagery) */
+body.dark-tiles #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.9); }
+body.red .leaflet-tile-pane { filter: grayscale(1) invert(1) brightness(.35) sepia(1) saturate(6) hue-rotate(-50deg); }
+#maperr { display: none; position: absolute; top: 40%; left: 0; right: 0; text-align: center; color: var(--muted); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex;
+        flex-direction: column; gap: 10px; }
+.card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px;
+           cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.card h2::before { content: '▾'; font-size: 11px; width: 10px; }
+.card h2:hover { color: var(--text); }
+.card.collapsed h2 { margin-bottom: 0; }
+.card.collapsed h2::before { content: '▸'; }
+.card.collapsed > :not(h2) { display: none !important; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.big { font-size: 18px; font-weight: 700; }
+.warn { color: var(--warn); font-weight: 600; }
+.pad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); gap: 4px; justify-content: center; }
+.pad .btn { padding: 0; touch-action: none; user-select: none; }
+.pad .btn.active { background: var(--accent); color: var(--bg); }
+#jogspeed .btn { padding: 3px 0; font-size: 12px; }
+#jogspeed .btn.sel { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+select.btn, input.btn { cursor: auto; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: right; color: var(--muted); font-weight: 500; font-size: 12px; padding: 3px 4px; position: sticky; top: 0; background: var(--panel2); }
+th:first-child, td:first-child { text-align: left; }
+td { text-align: right; padding: 3px 4px; border-top: 1px solid var(--line); }
+tr.p { cursor: pointer; }
+tr.p:hover td { background: var(--panel); }
+tr.p.sel td { color: var(--track); font-weight: 600; }
+tr.p.low td { color: var(--muted); }
+.list { max-height: 34vh; overflow-y: auto; }
+#msgs div { font-size: 12px; color: var(--muted); }
+#msgs div.new { color: var(--warn); }
+.hint { font-size: 12px; color: var(--muted); }
+a.ext { color: var(--accent); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; font-size: 13px; }
+a.ext:hover { border-color: var(--accent); }
+label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+.plane-icon svg { overflow: visible; }
+.leaflet-tooltip.lbl { background: transparent; border: 0; box-shadow: none; color: var(--text); font: 600 11px system-ui;
+                       text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); padding: 0; }
+.leaflet-tooltip.lbl::before { display: none; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left: 0; } }
+</style>
+</head>
+<body class="dark-tiles">
+<header>
+  <h1>NexPlane</h1>
+  <div class="tabs">
+    <button id="tab-sky" class="active">Sky</button>
+    <button id="tab-map">Map</button>
+  </div>
+  <span class="pill">Telescope <b id="h-scope">–</b></span>
+  <span class="pill">Target <b id="h-target">none</b></span>
+  <span class="pill" id="h-side" title="Side A: as during alignment. Side B: after a meridian flip."></span>
+  <span class="pill" id="h-conn">connecting …</span>
+  <span class="pill warn" id="h-locwarn" style="display:none" title="The selected location differs clearly from the GPS position"></span>
+  <span class="spacer"></span>
+  <label class="chk"><input type="checkbox" id="opt-mirror"> Sky like a map (east on the right)</label>
+  <label class="chk"><input type="checkbox" id="opt-red"> Red light</label>
+  <select id="opt-lang" class="btn" title="Sprache / Language" style="padding:2px 4px"><option value="de">DE</option><option value="en">EN</option></select>
+</header>
+<div id="limbanner">SAFE AREA DISABLED – AT YOUR OWN RISK, KEEP A HAND ON THE POWER SWITCH. Tracking is blocked.</div>
+<div id="banner">CONNECTION TO THE MOUNT DISTURBED – PREVENT COLLISIONS, CUT POWER IF NEEDED</div>
+<main>
+  <div id="view">
+    <canvas id="sky"></canvas>
+    <div id="map"></div>
+    <div id="maperr">Map not available (map library could not be loaded).<br>The sky view still works.</div>
+  </div>
+  <aside>
+    <div class="card" id="loc-card" data-collapsed-default="1">
+      <h2>Location</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Active</span><span id="loc-current">–</span>
+        <span>Coordinates</span><span id="loc-coords">–</span>
+        <span>GPS</span><span id="loc-gps">–</span>
+      </div>
+      <select id="loc-sel" class="btn" style="width:100%"></select>
+      <button class="btn" id="btn-loc" style="width:100%;margin-top:6px">Change location</button>
+      <div class="hint" style="margin-top:6px">The mount is stopped and NexPlane restarts with the new location. Alignment depends on the location and must be redone afterwards.</div>
+      <details id="place-edit" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Add locations &amp; landmarks</summary>
+        <div id="place-wrap">
+          <div id="place-map"></div>
+          <button class="btn" id="place-fs" title="Full screen">⛶</button>
+          <div id="place-bar"><span id="place-barpos" style="flex:1">–</span><button class="btn" id="place-fs-done">Accept &amp; back</button></div>
+        </div>
+        <div class="hint" id="place-maphint" style="margin:4px 0 8px">Click into the map or drag the marker. Without internet the map stays empty – then type the coordinates or use GPS.</div>
+        <div class="kv" style="grid-template-columns:auto 1fr;gap:4px 8px;align-items:center">
+          <span>Name</span><input id="place-name" class="btn" maxlength="40" placeholder="e.g. hill car park">
+          <span>Type</span><select id="place-type" class="btn"><option value="location">Location (where the telescope stands)</option><option value="landmark">Landmark (for alignment)</option></select>
+          <span>Latitude</span><input id="place-lat" class="btn" inputmode="decimal" placeholder="51.12345 (degrees)">
+          <span>Longitude</span><input id="place-lon" class="btn" inputmode="decimal" placeholder="7.12345 (degrees)">
+          <span>Altitude (m)</span><input id="place-alt" class="btn" inputmode="decimal" placeholder="above sea level">
+        </div>
+        <div class="hint" id="place-elev" style="margin-top:4px"></div>
+        <div class="hint" style="margin-top:4px">Height above sea level. For landmarks the height of the sighted point, e.g. the church spire, not of the ground.</div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="place-gps">Use GPS position</button>
+          <button class="btn" id="place-save">Save</button>
+          <button class="btn" id="place-save-act" title="Save as location and restart NexPlane with it">Save &amp; use as location</button>
+        </div>
+        <div id="place-list" style="margin-top:8px;font-size:12px"></div>
+      </details>
+    </div>
+    <div class="card" id="limits-card">
+      <h2>Safe area</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Profile</span><span id="lim-active">–</span>
+        <span>Blind areas</span><span id="lim-reach">–</span>
+        <span>Position relative to home</span><span id="lim-axes">–</span>
+      </div>
+      <div class="row" id="prof-row" style="margin-bottom:8px">
+        <select id="prof-sel" class="btn" style="flex:1;min-width:0"></select>
+        <button class="btn" id="btn-prof">Activate</button>
+      </div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="opt-blind" checked> Show blind areas</label>
+      <div class="row" style="margin-bottom:6px">
+        <span class="hint">Flight altitude for the map</span>
+        <select id="opt-blind-alt" class="btn">
+          <option value="3000">3,000 m</option><option value="6000">6,000 m</option>
+          <option value="9000">9,000 m</option><option value="11000" selected>11,000 m</option>
+          <option value="13000">13,000 m</option>
+        </select>
+      </div>
+      <div class="hint">Red tint: directions the mount cannot reach on either side of the pole with the active profile. On the map this applies to aircraft at the selected altitude.</div>
+      <details id="refine-box" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Refine limits</summary>
+        <div class="hint" style="margin:6px 0">The crosshair on the map (for the flight altitude chosen above) and in the sky view shows where the telescope points. Disable the safe area, move the crosshair under supervision into a red area until just before a collision, then “Accept point” (gamepad: Share). The gamepad stick moves the crosshair on the map directly: up = north, right = east (only after alignment). Several points along the real limit make the red area smaller; the safety margin still applies.</div>
+        <div id="refine-status" style="margin-top:6px;font-size:13px"></div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="refine-add" style="font-weight:600">Accept point</button>
+          <button class="btn" id="refine-undo">Undo</button>
+          <button class="btn" id="refine-save">Save</button>
+          <button class="btn" id="refine-discard">Discard</button>
+        </div>
+      </details>
+    </div>
+    <div class="card" id="manual-card" style="display:none">
+      <h2>Control &amp; alignment</h2>
+      <div id="align-status" style="margin-bottom:8px"></div>
+      <button class="btn danger" id="btn-allstop" style="width:100%;font-weight:700;margin-bottom:10px">STOP (Esc)</button>
+      <button class="btn" id="btn-limoff" style="width:100%;margin-bottom:10px;display:none">Disable safe area (at your own risk)</button>
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div class="pad" id="jogpad">
+          <span></span><button class="btn" data-jog="0,1" title="Dec +">▲</button><span></span>
+          <button class="btn" data-jog="-1,0" title="RA −">◀</button><span class="hint" style="align-self:center;text-align:center">hold</span><button class="btn" data-jog="1,0" title="RA +">▶</button>
+          <span></span><button class="btn" data-jog="0,-1" title="Dec −">▼</button><span></span>
+        </div>
+        <div style="font-size:13px">
+          <div class="hint" style="margin-bottom:4px">Speed (°/s)</div>
+          <div id="jogspeed" style="display:grid;grid-template-columns:repeat(3,44px);gap:4px"></div>
+        </div>
+      </div>
+      <div class="hint" style="margin:6px 0 10px">◀ ▶ RA axis, ▲ ▼ Dec axis. Arrow keys work too (hold them).</div>
+      <button class="btn" id="btn-home" style="width:100%">Go to home position</button>
+      <div class="hint" id="home-hint" style="margin:4px 0 10px"></div>
+      <div class="hint" style="margin-bottom:4px">Align: point the telescope exactly at the object, then</div>
+      <div class="row">
+        <select id="align-sel" class="btn" style="flex:1;min-width:0"></select>
+        <input id="align-sky" class="btn" placeholder="e.g. vega, jupiter" style="flex:1;min-width:0;display:none">
+      </div>
+      <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Telescope points at it now – align</button>
+      <div class="hint" style="margin:10px 0 4px">Or on an aircraft: click it in the list or map (aiming target), move the telescope to centre it, then</div>
+      <button class="btn" id="btn-align-plane" style="width:100%" title="Same as gamepad ✕ and “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
+      <button class="btn" id="btn-forget" style="width:100%;margin-top:6px" title="Discard sync points, model and correction, e.g. after tests in the living room">Forget alignment</button>
+      <details id="testalign-box" style="margin-top:12px">
+        <summary class="hint" style="cursor:pointer">Rough alignment for tests at home (test mode)</summary>
+        <div class="hint" style="margin:6px 0">Only for testing without a view of a landmark or the sky, e.g. to refine the limits in the living room. Requirements: mount roughly facing north, latitude set, taught home position (counterweight down, tube toward the pole). Accuracy only a few degrees. Not saved and does not overwrite any alignment files. Check: from the home position move only the Dec axis; the tube swings from the pole toward west or east. The display must show the same side (west: Az between 180° and 360°, east: Az between 0° and 180°), otherwise press “Turn by 180°”.</div>
+        <button class="btn" id="btn-test-set" style="width:100%">Set test alignment</button>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" id="btn-test-flip" style="flex:1">Turn by 180°</button>
+          <button class="btn" id="btn-test-end" style="flex:1">End test mode</button>
+        </div>
+      </details>
+    </div>
+    <div class="card" id="target-card">
+      <h2>Tracking</h2>
+      <div id="target-none" class="hint">No target. Click an aircraft on the map, in the sky view or in the list.</div>
+      <div id="fixed-info" style="display:none">
+        <div class="big">Side change test</div>
+        <div class="kv" style="margin:6px 0 8px">
+          <span>Fixed point</span><span id="f-pos"></span>
+          <span>Target side</span><span id="f-side"></span>
+          <span>Telescope offset</span><span id="f-off"></span>
+        </div>
+        <div class="hint" style="margin-bottom:8px">After the change the telescope must point at the same spot as before.</div>
+        <button class="btn danger" id="btn-stop2" style="width:100%">End test (Esc)</button>
+      </div>
+      <div id="target-info" style="display:none">
+        <div class="big" id="t-name"></div>
+        <div class="kv" style="margin:6px 0 8px">
+          <span>Altitude</span><span id="t-alt"></span>
+          <span>Distance</span><span id="t-range"></span>
+          <span>Elevation / azimuth</span><span id="t-elaz"></span>
+          <span>Motion across the sky</span><span id="t-rate"></span>
+          <span>Speed</span><span id="t-speed"></span>
+          <span>Data age</span><span id="t-age"></span>
+          <span>Telescope offset</span><span id="t-off"></span>
+        </div>
+        <div class="row" id="t-links" style="margin-bottom:8px"></div>
+        <button class="btn danger" id="btn-stop" style="width:100%">Stop tracking (Esc)</button>
+      </div>
+    </div>
+    <div class="card" id="flip-card" style="display:none">
+      <h2>Meridian flip</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Telescope on</span><span id="fl-side">–</span>
+        <span>Automatic</span><span id="fl-auto">–</span>
+      </div>
+      <button class="btn" id="btn-flip" style="width:100%">Test side change</button>
+      <div class="hint" style="margin-top:6px">Keeps the current pointing direction and moves to it on the other side of the pole. Point the telescope at an easily recognisable spot first.</div>
+    </div>
+    <div class="card">
+      <h2>Correction</h2>
+      <div class="row" style="justify-content:space-between">
+        <div class="pad">
+          <span></span><button class="btn" data-off="0,1">▲</button><span></span>
+          <button class="btn" data-off="-1,0">◀</button><button class="btn" id="btn-reset" title="Reset correction (q)">0</button><button class="btn" data-off="1,0">▶</button>
+          <span></span><button class="btn" data-off="0,-1">▼</button><span></span>
+        </div>
+        <div class="kv" style="font-size:13px">
+          <span>Step</span><span><label class="chk"><input type="checkbox" id="opt-big"> large (0.5°)</label></span>
+          <span id="o-l1">Azimuth</span><span id="o-az">0,00°</span>
+          <span id="o-l2">Elevation</span><span id="o-el">0,00°</span>
+        </div>
+      </div>
+      <div class="row" id="corr-btns" style="margin-top:8px;display:none;gap:6px">
+        <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point (gamepad ✕)">Accept (sync point)</button>
+        <button class="btn" id="btn-model-pop" title="Delete last sync point (gamepad □)">Delete last</button>
+      </div>
+      <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center">
+        <span class="hint">Focal length when accepting</span>
+        <select id="focal-sel" class="btn"></select>
+      </div>
+      <div id="model-status" style="margin-top:6px;font-size:13px"></div>
+      <div id="model-points" style="margin-top:4px;font-size:12px"></div>
+      <div class="hint" style="margin-top:6px" id="corr-hint">Keys: W/A/S/D 0.1° each, with Shift 0.5°, Q resets</div>
+      <div style="margin-top:6px;font-size:13px" id="pad-status"></div>
+    </div>
+    <div class="card">
+      <h2>Aircraft <span id="n-planes"></span></h2>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="opt-above" checked> only above 5° elevation</label>
+      <div class="list">
+        <table>
+          <thead><tr><th>Callsign</th><th>Elev.</th><th>Dist.</th><th>Altitude</th><th>°/s</th></tr></thead>
+          <tbody id="plist"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Messages</h2>
+      <div id="msgs"><div>No messages.</div></div>
+    </div>
+    <div class="card" data-collapsed-default="1">
+      <h2>Controller</h2>
+      <div class="kv" style="align-items:center">
+        <span>kp</span><span class="row"><button class="btn" data-gain="kp,-0.01">−</button><b id="g-kp"></b><button class="btn" data-gain="kp,0.01">+</button></span>
+        <span>ki</span><span class="row"><button class="btn" data-gain="ki,-0.01">−</button><b id="g-ki"></b><button class="btn" data-gain="ki,0.01">+</button></span>
+        <span>kd</span><span class="row"><button class="btn" data-gain="kd,-0.01">−</button><b id="g-kd"></b><button class="btn" data-gain="kd,0.01">+</button></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Keys as before: R/F, T/G, Y/U</div>
+    </div>
+    <button class="btn danger" id="btn-quit">Quit NexPlane</button>
+  </aside>
+</main>
+<script src="/static/i18n_de.js"></script>
+<script>
+'use strict';
+const TOKEN = '__NEXPLANE_TOKEN__';
+// ---- Language ----
+// All texts in this page and all messages from NexPlane are written in English. For German, the
+// English text is looked up in window.NEXPLANE_DE (webgui_static/i18n_de.js). Messages from
+// NexPlane arrive as {t: template, p: {name: value}} (see messages.py); the page translates the
+// template and fills in the values, so numbers and names never need to be matched.
+let LANG = (() => {
+  try { const l = localStorage.getItem('nexplane-lang'); if (l) return l; } catch (e) {}
+  return (navigator.language || '').toLowerCase().startsWith('de') ? 'de' : 'en';
+})();
+if (!window.NEXPLANE_DE) LANG = 'en';
+const LOCALE = () => LANG === 'de' ? 'de-DE' : 'en-GB';
+function lookup(template) {
+  if (LANG !== 'de') return template;
+  const D = window.NEXPLANE_DE;
+  return Object.prototype.hasOwnProperty.call(D, template) ? D[template] : template;
+}
+// Decimal numbers formatted by NexPlane ("0.25") get the decimal separator of the language.
+const localNum = v => LANG === 'de' && /^[+−-]?\d+\.\d+$/.test(v) ? v.replace('.', ',') : v;
+function msgText(m) {
+  // A message from NexPlane (or from T()): translate the template and fill in the parameters.
+  if (m == null) return '';
+  if (typeof m !== 'object') return String(m);
+  const p = m.p || {};
+  return lookup(m.t).replace(/\{(\w+)(?::[^}]*)?\}/g, (all, name) =>
+    name in p ? (typeof p[name] === 'object' ? msgText(p[name]) : localNum(String(p[name]))) : all);
+}
+// Text written in this page: T('Command not delivered: {error}', {error: 'timeout'}) gives the text in the selected language.
+const T = (template, params) => msgText({t: template, p: params || {}});
+// Static texts in the HTML (text nodes, title and placeholder attributes) are translated when the
+// language changes. The original of each node is remembered so the switch works both ways; text that
+// the page created in German (e.g. map controls) is mapped back to its English original.
+const I18N_ORIG = new WeakMap(), I18N_LAST = new WeakMap(), I18N_ATTR = new WeakMap();
+let DE_TO_EN = null;
+function staticText(key) {
+  if (LANG === 'de') return lookup(key);
+  if (!DE_TO_EN) DE_TO_EN = new Map(Object.entries(window.NEXPLANE_DE || {}).map(([en, de]) => [de, en]));
+  return DE_TO_EN.has(key) && !key.includes('{') ? DE_TO_EN.get(key) : key;
+}
+function translateTree(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const par = n.parentNode && n.parentNode.nodeName;
+    if (par === 'SCRIPT' || par === 'STYLE') continue;
+    // A node changed by the page since the last translation holds new text, already in the right language.
+    if (I18N_ORIG.has(n) && n.data !== I18N_LAST.get(n)) { I18N_ORIG.delete(n); continue; }
+    if (!I18N_ORIG.has(n)) {
+      if (!n.data.trim()) continue;
+      I18N_ORIG.set(n, n.data);
+    }
+    const orig = I18N_ORIG.get(n), key = orig.trim();
+    const want = orig.replace(key, staticText(key));
+    if (n.data !== want) n.data = want;
+    I18N_LAST.set(n, want);
+  }
+  for (const el of root.querySelectorAll('[title],[placeholder]')) {
+    let a = I18N_ATTR.get(el);
+    if (!a) { a = {}; I18N_ATTR.set(el, a); }
+    for (const name of ['title', 'placeholder']) {
+      if (!el.hasAttribute(name)) continue;
+      const cur = el.getAttribute(name);
+      if (a[name] === undefined || cur !== a[name + '_last']) a[name] = cur;
+      const want = staticText(a[name]);
+      if (cur !== want) el.setAttribute(name, want);
+      a[name + '_last'] = want;
+    }
+  }
+}
+function setLang(l) {
+  LANG = l; try { localStorage.setItem('nexplane-lang', l); } catch (e) {}
+  document.documentElement.lang = l;
+  translateTree(document.body);
+  // Cached parts of the panel include the language in their key, so they are redrawn now.
+  if (S) updatePanel();
+}
+const RAD = Math.PI / 180;
+let S = null;                 // last state from the server
+let view = 'sky';
+const trails = new Map();     // hex -> [{az, el, t}]
+let lastTrailT = 0;
+let hoverHex = null;
+let lastMsgCount = 0;
+
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => v == null || isNaN(v) ? '–' : v.toLocaleString(LOCALE(), {minimumFractionDigits: d, maximumFractionDigits: d});
+const css = name => getComputedStyle(document.body).getPropertyValue(name).trim();
+const hexLabel = h => h.replace(/^0x/i, '').slice(-6).toUpperCase();
+const label = p => p.callsign || hexLabel(p.hex);
+
+async function api(name, data = {}) {
+  try {
+    const r = await fetch('/api/' + name, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-NexPlane-Token': TOKEN},
+                                           body: JSON.stringify(data)});
+    const j = await r.json();
+    if (!j.ok) addLocalMsg(j.error || T('Error'));
+    return j;
+  } catch (e) { addLocalMsg(T('Command not delivered: {error}', {error: String(e)})); }
+}
+// Messages created in the page itself; text is a message from NexPlane or a string from T().
+const localMsgs = [];
+function addLocalMsg(text) { localMsgs.push({t: Date.now() / 1000, text}); }
+
+let REACH = null, reachVersion = -1, reachFetching = false;
+async function fetchReach(version) {
+  reachFetching = true;
+  try {
+    const r = await fetch('/api/reach', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    if (r.ok) { const j = await r.json(); REACH = j.grid; reachVersion = version; }
+  } catch (e) { /* retry on the next poll */ }
+  reachFetching = false;
+}
+function blindEnabled() { return $('opt-blind').checked && REACH && S && S.profiles && S.profiles.active; }
+
+async function poll() {
+  try {
+    const r = await fetch('/api/state', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    if (r.status === 403) { location.reload(); return; }   // NexPlane was restarted
+    if (!r.ok) throw new Error(r.status);
+    S = await r.json();
+    $('h-conn').innerHTML = `<b style="color:var(--ok)">${esc(T('connected'))}</b>`;
+    if (S.reach && S.reach.version !== reachVersion && !reachFetching) fetchReach(S.reach.version);
+    updateTrails(); updatePanel(); if (view === 'map') updateMap();
+  } catch (e) {
+    $('h-conn').innerHTML = `<b style="color:var(--warn)">${esc(T('no connection to NexPlane'))}</b>`;
+  }
+  setTimeout(poll, 250);
+}
+
+function updateTrails() {
+  const now = Date.now() / 1000;
+  if (now - lastTrailT < 1) return;
+  lastTrailT = now;
+  const seen = new Set();
+  for (const p of S.planes) {
+    seen.add(p.hex);
+    if (!trails.has(p.hex)) trails.set(p.hex, []);
+    const tr = trails.get(p.hex);
+    tr.push({az: p.az, el: p.el, lat: p.lat, lon: p.lon, t: now});
+    while (tr.length && now - tr[0].t > 60) tr.shift();
+  }
+  for (const k of [...trails.keys()]) if (!seen.has(k)) trails.delete(k);
+}
+
+// ---------------------------------------------------------------- Sidebar
+function angDist(a, b) {
+  const c = Math.sin(a.el * RAD) * Math.sin(b.el * RAD) + Math.cos(a.el * RAD) * Math.cos(b.el * RAD) * Math.cos((a.az - b.az) * RAD);
+  return Math.acos(Math.max(-1, Math.min(1, c))) / RAD;
+}
+
+function updatePanel() {
+  updateRefinePanel();
+  $('banner').classList.toggle('show', !!S.comm_failure);
+  $('limbanner').classList.toggle('show', !!S.limits_off);
+  $('btn-limoff').style.display = (S.profiles && S.profiles.active) ? '' : 'none';
+  $('btn-limoff').textContent = S.limits_off ? T('Re-enable safe area') : T('Disable safe area (at your own risk)');
+  $('btn-limoff').classList.toggle('danger', !!S.limits_off);
+  $('h-scope').textContent = S.telescope ? `Az ${fmt(S.telescope.az)}°  El ${fmt(S.telescope.el)}°` : '–';
+  const t = S.planes.find(p => p.hex === S.tracked);
+  const fx = S.fixed_target;
+  $('h-target').textContent = t ? label(t) : fx ? T('fixed point') : T('none');
+  $('target-none').style.display = t || fx ? 'none' : '';
+  $('fixed-info').style.display = fx ? '' : 'none';
+  if (fx) {
+    $('f-pos').textContent = `Az ${fmt(fx.az)}°  El ${fmt(fx.el)}°`;
+    $('f-side').textContent = fx.side ? T('Side {side}', {side: fx.side}) : T('being determined …');
+    $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
+  }
+  const L = S.location || {current: '', presets: []};
+  const cur = L.presets.find(p => p.name === L.current);
+  $('loc-current').textContent = L.current || '–';
+  $('loc-coords').textContent = cur ? `${fmt(cur.lat, 4)}°, ${fmt(cur.lon, 4)}°, ${fmt(cur.alt, 0)} m` : '–';
+  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name + p.type + p.lat + p.lon + p.alt).join('|');
+  if ($('loc-sel').dataset.key !== lkey) {
+    $('loc-sel').dataset.key = lkey;
+    $('loc-sel').innerHTML = L.presets.filter(p => p.type !== 'landmark').map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+    renderPlaceList(L);
+  }
+  const G = S.gps, fixp = G && G.fix;
+  let gpsTxt = G ? msgText(G.status) : T('off');
+  let warn = '';
+  if (fixp) {
+    gpsTxt = `${fmt(fixp.lat, 5)}°, ${fmt(fixp.lon, 5)}°, ${fmt(fixp.alt, 0)} m` + (fixp.sats ? ' · ' + T('{n} sat.', {n: fixp.sats}) : '') +
+             ' · ' + T('{s} s ago', {s: fmt(fixp.age_s, 0)});
+    if (cur) {
+      const d = distM(cur.lat, cur.lon, fixp.lat, fixp.lon), dist = d < 1000 ? fmt(d, 0) + ' m' : fmt(d / 1000, 1) + ' km';
+      gpsTxt += ' · ' + T('{dist} from the location', {dist});
+      if (d > 300 && fixp.age_s < 600) warn = T('location {dist} away from GPS', {dist});
+    }
+  }
+  $('loc-gps').textContent = gpsTxt;
+  $('h-locwarn').style.display = warn ? '' : 'none';
+  $('h-locwarn').textContent = warn ? '⚠ ' + warn : '';
+  const P = S.profiles || {list: [], active: ''};
+  const R = S.reach || {};
+  $('lim-active').textContent = P.active || T('no safe area configured');
+  $('prof-row').style.display = P.list.length > 1 ? '' : 'none';
+  const pkey = LANG + '|' + P.active + '|' + P.list.join('|');
+  if ($('prof-sel').dataset.key !== pkey) {
+    $('prof-sel').dataset.key = pkey;
+    $('prof-sel').innerHTML = P.list.map(n => `<option value="${esc(n)}" ${n === P.active ? 'selected' : ''}>${esc(n)}${n === P.active ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+  }
+  const signed = v => (v >= 0 ? '+' : '') + fmt(v, 2);
+  $('lim-axes').textContent = S.axis_rel ? T('Axis 1 {a1}° · axis 2 {a2}°', {a1: signed(S.axis_rel[0]), a2: signed(S.axis_rel[1])}) : '–';
+  $('lim-reach').textContent = !P.active ? '–' : R.status ? msgText(R.status)
+    : R.available ? T('calculated') : (S.manual && S.manual.aligned ? T('calculating …') : T('after alignment'));
+  const M = S.manual || {};
+  $('manual-card').style.display = M.available ? '' : 'none';
+  if (M.available) {
+    $('btn-align-plane').disabled = !S.tracked || !S.axis_correction;
+    $('btn-test-flip').disabled = $('btn-test-end').disabled = !M.test_aligned;
+    $('align-status').innerHTML = M.test_aligned ? `<span class="warn">${esc(msgText(M.aligned_text))}</span> <span class="hint">` +
+        esc(T('– rough only, for home use. A real alignment (landmark, sky object or aircraft + ✕) ends test mode.')) + '</span>'
+      : M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>` +
+        (M.rough_aligned ? ` <span class="hint">${esc(T('– track a first aircraft, centre it, ✕'))}</span>` : '')
+      : `<span class="warn">${esc(T('Not aligned.'))}</span> <span class="hint">` +
+        esc(T('With a landmark: point the telescope at it and align below. Without a landmark: click an aircraft in ' +
+              'the list (or gamepad R1) – it becomes the aiming target, NexPlane does not move by itself yet. Move the ' +
+              'telescope onto it by hand, centred, then ✕ or “Accept”.')) + '</span>' +
+        (S.tracked ? `<br>${esc(T('Aiming target:'))} <b>${esc((S.planes.find(p => p.hex === S.tracked) || {}).callsign || S.tracked)}</b>` : '');
+    $('btn-home').textContent = M.home_active ? T('Moving to home position … (Esc stops)') : T('Go to home position');
+    $('home-hint').textContent = T('Target: {where}', {where: M.home_source});
+    const sel = $('align-sel');
+    const key = LANG + '|' + M.align_targets.join('|');
+    if (sel.dataset.key !== key) {
+      const was = sel.value;
+      sel.dataset.key = key;
+      sel.innerHTML = `<option value="__sky__">${esc(T('Sky object …'))}</option>` +
+        M.align_targets.map(n => `<option value="${esc(n)}">${esc(T('Landmark: {name}', {name: n}))}</option>`).join('');
+      if (was && [...sel.options].some(o => o.value === was)) sel.value = was;
+      $('align-sky').style.display = sel.value === '__sky__' ? '' : 'none';
+    }
+  }
+  const eq = S.mount_mode === 'eq' && S.scope_side;
+  $('flip-card').style.display = eq ? '' : 'none';
+  $('h-side').innerHTML = eq ? esc(T('Side')) + ` <b>${esc(S.scope_side)}</b>` : '';
+  if (eq) {
+    const moving = S.target_side && S.target_side !== S.scope_side;
+    $('fl-side').innerHTML = esc(T('Side {side}', {side: S.scope_side})) +
+      (moving ? ` <span class="warn">${esc(T('→ changing to {side}', {side: S.target_side}))}</span>` : '');
+    $('fl-auto').textContent = S.auto_flip ? T('on') : T('off (no safe area or disabled)');
+  }
+  $('target-info').style.display = t ? '' : 'none';
+  if (t) {
+    $('t-name').textContent = `${label(t)}  (${hexLabel(t.hex)})`;
+    $('t-alt').textContent = t.in_space ? T('in space') : `${fmt(t.alt_m, 0)} m`;
+    $('t-range').textContent = `${fmt(t.range_m / 1000)} km`;
+    $('t-elaz').textContent = `${fmt(t.el)}° / ${fmt(t.az)}°`;
+    $('t-rate').innerHTML = t.ang_rate_dps > 3.5 ? `<span class="warn">${esc(T('{rate} °/s – very fast', {rate: fmt(t.ang_rate_dps, 2)}))}</span>` : `${fmt(t.ang_rate_dps, 2)} °/s`;
+    $('t-speed').textContent = `${fmt(t.speed_ms * 3.6, 0)} km/h`;
+    $('t-age').innerHTML = t.age_s == null ? '–' : (t.age_s > 5 ? `<span class="warn">${fmt(t.age_s)} s</span>` : `${fmt(t.age_s)} s`);
+    const fn = flightNumber(t.callsign);
+    const linkKey = LANG + '|' + t.hex + '|' + fn;
+    if ($('t-links').dataset.key !== linkKey) {
+      $('t-links').dataset.key = linkKey;
+      $('t-links').innerHTML = fn ? `<a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.airnavradar.com/data/flights/${encodeURIComponent(fn)}/">AirNav Radar ↗</a>
+        <a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.flightradar24.com/${encodeURIComponent(fn)}">Flightradar24 ↗</a>
+        <a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.flightaware.com/live/flight/${encodeURIComponent((t.callsign || fn).trim())}">FlightAware ↗</a>
+        ${fn !== t.callsign ? `<span class="hint">${esc(T('as {flight}', {flight: fn}))}</span>` : ''}` : `<span class="hint">${esc(T('No callsign received, so no links.'))}</span>`;
+    }
+    const aim = S.tracked_now || t;
+    $('t-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, aim), 2)}°` : '–';
+  }
+  if (S.axis_correction) {
+    const C = S.correction || {};
+    $('o-l1').textContent = T('RA axis'); $('o-l2').textContent = T('Dec axis');
+    $('o-az').textContent = fmt(C.ra || 0, 2) + '°';
+    $('o-el').textContent = fmt(C.dec || 0, 2) + '°';
+    $('corr-btns').style.display = 'flex';
+    const Mo = C.model || {};
+    if (Mo.points != null) {
+      let t = `${esc(T('Sync points:'))} <b>${Mo.points}</b>`;
+      if (Mo.active) {
+        t += ` · <b>${esc(T('Polar error model active'))}</b>, ` + esc(T('residual {rms}°', {rms: fmt(Mo.rms, 2)}));
+        if (Mo.polar_high != null) {
+          t += '<br>' + esc(T('Polar axis: {h:.1f}° too {updown}, {e:.1f}° too far {eastwest}.', {
+            h: fmt(Math.abs(Mo.polar_high), 1), updown: {t: Mo.polar_high > 0 ? 'high' : 'low'},
+            e: fmt(Math.abs(Mo.polar_east), 1), eastwest: {t: Mo.polar_east > 0 ? 'east' : 'west'}}));
+        }
+        if (Mo.cone != null && Math.abs(Mo.cone) >= 0.05) t += ' · ' + esc(T('cone error {cone}°', {cone: fmt(Mo.cone, 2)}));
+      } else if (Mo.points > 0) {
+        t += ` · <span class="hint">${esc(T('zero point only; from 3 points in different directions the polar misalignment is included'))}</span>`;
+      } else {
+        t += ` <span class="hint">${esc(T('(align first)'))}</span>`;
+      }
+      $('model-status').innerHTML = t;
+      const L = Mo.list || [];
+      const pkey = LANG + JSON.stringify(L.map(p => [p.name, p.focal, p.res == null ? null : Math.round(p.res * 100)]));
+      if ($('model-points').dataset.key !== pkey) {
+        $('model-points').dataset.key = pkey;
+        $('model-points').innerHTML = L.length ? '<table style="width:100%"><tbody>' + L.map((p, i) => {
+          const bad = p.res != null && p.res > 0.5;
+          return `<tr><td>${i + 1}</td><td>${esc(p.name || '–')}</td><td>${p.focal ? Math.round(p.focal) + ' mm' : ''}</td>` +
+                 `<td class="${bad ? 'warn' : ''}" title="${esc(T('Deviation from the model'))}">${p.res == null ? '' : fmt(p.res, 2) + '°'}</td>` +
+                 `<td style="text-align:right">${L.length > 1 ? `<button class="btn" data-delpt="${i}" title="${esc(T('Delete point'))}" style="padding:0 6px">✕</button>` : ''}</td></tr>`;
+        }).join('') + '</tbody></table>' + (L.some(p => p.res != null && p.res > 0.5) ? `<span class="warn">${esc(T('Red: poor fit (> 0.5°) – centred wrongly?'))}</span>` : '') : '';
+      }
+    }
+    const F = S.focal || {steps: [], mm: 0};
+    $('focal-row').style.display = 'flex';
+    const fkey = F.steps.join('|') + '|' + F.mm;
+    if ($('focal-sel').dataset.key !== fkey) {
+      $('focal-sel').dataset.key = fkey;
+      const steps = F.steps.includes(F.mm) ? F.steps : [...F.steps, F.mm].sort((a, b) => a - b);
+      $('focal-sel').innerHTML = steps.map(s => `<option value="${s}" ${s === F.mm ? 'selected' : ''}>${Math.round(s)} mm</option>`).join('');
+    }
+    $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
+    const G = S.gamepad;
+    $('pad-status').innerHTML = !G ? `<span class="hint">${esc(T('Gamepad disabled (config.yaml).'))}</span>`
+      : G.connected ? `🎮 <b>${esc(G.name)}</b> ${esc(T('connected'))} <span class="hint">${esc(T('– Stick: correction/move, R2 faster, ✕ sync point, □ delete last, ○ correction 0, △ STOP, R1/L1 aircraft, Options focal length, Share limit point'))}</span>`
+      : `<span class="warn">${esc(T('🎮 not connected'))}</span> <span class="hint">${esc(msgText(G.error))}</span>`;
+  } else {
+    $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
+    $('o-el').textContent = fmt(S.offsets.el, 2) + '°';
+  }
+  $('g-kp').textContent = fmt(S.gains.kp, 2); $('g-ki').textContent = fmt(S.gains.ki, 2); $('g-kd').textContent = fmt(S.gains.kd, 2);
+
+  const onlyAbove = $('opt-above').checked;
+  const list = S.planes.filter(p => !p.in_space && (!onlyAbove || p.el >= 5)).sort((a, b) => b.el - a.el);
+  $('n-planes').textContent = `(${list.length})`;
+  $('plist').innerHTML = list.map(p => `<tr class="p ${p.hex === S.tracked ? 'sel' : ''} ${p.el < 5 ? 'low' : ''}" data-hex="${p.hex}">
+      <td>${esc(label(p))}</td><td>${fmt(p.el)}°</td><td>${fmt(p.range_m / 1000, 0)} km</td>
+      <td>${fmt(p.alt_m, 0)}</td><td>${fmt(p.ang_rate_dps, 2)}</td></tr>`).join('');
+
+  const msgs = [...S.messages, ...localMsgs].sort((a, b) => b.t - a.t).slice(0, 6);
+  const now = Date.now() / 1000;
+  $('msgs').innerHTML = msgs.length ? msgs.map(m => `<div class="${now - m.t < 10 ? 'new' : ''}">${new Date(m.t * 1000).toLocaleTimeString(LOCALE())} – ${esc(msgText(m.text))}</div>`).join('')
+                                    : `<div>${esc(T('No messages.'))}</div>`;
+}
+// ICAO airline code (3 letters, in the ADS-B callsign) -> IATA code (2 characters, in flight numbers).
+// Only used if the code is followed exclusively by digits; otherwise the
+// callsign is not a flight number and is linked unchanged.
+const ICAO_TO_IATA = {DLH: 'LH', EWG: 'EW', RYR: 'FR', EZY: 'U2', AUA: 'OS', SWR: 'LX',
+  KLM: 'KL', AFR: 'AF', BAW: 'BA', EIN: 'EI', IBE: 'IB', VLG: 'VY', TAP: 'TP', SAS: 'SK', FIN: 'AY', LOT: 'LO',
+  THY: 'TK', PGT: 'PC', UAE: 'EK', QTR: 'QR', ETD: 'EY', UAL: 'UA', DAL: 'DL', AAL: 'AA', ACA: 'AC', CFG: 'DE',
+  BEL: 'SN', WZZ: 'W6', CSA: 'OK', AEE: 'A3', ICE: 'FI', SXS: 'XQ', TUI: 'X3', ITY: 'AZ', NAX: 'DY'};
+function flightNumber(callsign) {
+  const cs = (callsign || '').trim().toUpperCase();
+  const m = cs.match(/^([A-Z]{3})(\d{1,4})$/);
+  if (m && ICAO_TO_IATA[m[1]]) return ICAO_TO_IATA[m[1]] + String(Number(m[2]));
+  return cs;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+
+$('plist').addEventListener('click', e => { const tr = e.target.closest('tr[data-hex]'); if (tr) api('track', {hex: tr.dataset.hex}); });
+// ---- Profile / blind zones ----
+$('btn-prof').onclick = () => {
+  const name = $('prof-sel').value;
+  if (!S || !S.profiles || name === S.profiles.active) { addLocalMsg(T('Please choose a different profile.')); return; }
+  if (confirm(T('Activate profile "{name}"? The mount will be stopped for this.', {name}))) api('set_profile', {name});
+};
+for (const id of ['opt-blind', 'opt-blind-alt']) {
+  const el = $(id), key = 'nexplane-' + id;
+  try { const v = localStorage.getItem(key); if (v !== null) { if (el.type === 'checkbox') el.checked = v === '1'; else el.value = v; } } catch (e) {}
+  el.addEventListener('change', () => { try { localStorage.setItem(key, el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value); } catch (e) {} });
+}
+
+// ---- Location ----
+$('btn-loc').onclick = () => {
+  const name = $('loc-sel').value;
+  if (!S || !S.location || name === S.location.current) { addLocalMsg(T('Please choose a different location.')); return; }
+  if (confirm(T('Change location to "{name}"? The mount is stopped, NexPlane restarts and must be aligned again afterwards.', {name}))) {
+    api('set_location', {name}).then(j => { if (j && j.ok) addLocalMsg(T('Changing location, the page will reload shortly …')); });
+  }
+};
+
+// ---- Create places (locations / landmarks) ----
+function distM(la1, lo1, la2, lo2) {
+  const p1 = la1 * RAD, p2 = la2 * RAD, dp = p2 - p1, dl = (lo2 - lo1) * RAD;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+let placeMap = null, placeMarker = null, placeLayer = null;
+function placeFields() {
+  const num = id => parseFloat(String($(id).value).replace(',', '.'));
+  return {name: $('place-name').value.trim(), type: $('place-type').value, lat: num('place-lat'), lon: num('place-lon'), alt: num('place-alt')};
+}
+let placeAltAuto = true, placeElevSeq = 0;
+async function placeLookupElevation(lat, lon) {
+  const seq = ++placeElevSeq;
+  $('place-elev').textContent = T('Looking up ground elevation …');
+  try {
+    const r = await fetch(`/api/elevation?lat=${lat}&lon=${lon}`, {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    const j = await r.json();
+    if (seq !== placeElevSeq) return;
+    if (!j.ok) { $('place-elev').textContent = T('Ground elevation not available ({error})', {error: j.error ? msgText(j.error) : String(r.status)}); return; }
+    const g = Math.round(j.alt);
+    const lm = $('place-type').value === 'landmark';
+    $('place-elev').innerHTML = `${esc(T('Ground'))}: <b>${g} m</b> ${esc(T('above sea level'))} <span class="hint">(${esc(j.source)})</span>` +
+      (lm ? `<br><span class="warn">${esc(T('Landmark: add the height of the building or spire.'))}</span>` : '');
+    if (placeAltAuto) { $('place-alt').value = g; }
+  } catch (e) {
+    if (seq === placeElevSeq) $('place-elev').textContent = T('Ground elevation not available (no internet?)');
+  }
+}
+function placeSetPos(lat, lon, alt) {
+  $('place-lat').value = lat.toFixed(6); $('place-lon').value = lon.toFixed(6);
+  $('place-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if (alt != null) $('place-alt').value = Math.round(alt);
+  if (placeMap) { placeMarker.setLatLng([lat, lon]); if (!placeMarker._map) placeMarker.addTo(placeMap); }
+}
+async function initPlaceMap() {
+  if (placeMap) { placeMap.invalidateSize(); return; }
+  try { await loadLeaflet(); } catch (e) { $('place-maphint').textContent = T('Map library not available – type the coordinates.'); return; }
+  const c = S ? [S.observer.lat, S.observer.lon] : [51, 10];
+  placeMap = L.map('place-map', {zoomControl: true}).setView(c, 12);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'});
+  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                          {maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'});
+  const layers = {}; layers[T('Map')] = osm; layers[T('Satellite')] = sat;
+  const pref = storeGet('nexplane-place-layer') === 'sat' ? sat : osm;
+  pref.addTo(placeMap);
+  L.control.layers(layers, null, {position: 'topright'}).addTo(placeMap);
+  placeMap.on('baselayerchange', e => storeSet('nexplane-place-layer', e.layer === sat ? 'sat' : 'osm'));
+  placeLayer = L.layerGroup().addTo(placeMap);
+  placeMarker = L.marker(c, {draggable: true});
+  placeMarker.on('dragend', () => { const p = placeMarker.getLatLng(); placeSetPos(p.lat, p.lng, null); placeLookupElevation(p.lat, p.lng); });
+  placeMap.on('click', e => { placeSetPos(e.latlng.lat, e.latlng.lng, null); placeLookupElevation(e.latlng.lat, e.latlng.lng); });
+  renderPlaceList(S && S.location);
+}
+function renderPlaceList(Lc) {
+  if (!Lc) return;
+  const rows = Lc.presets.map(p => `<tr><td>${p.type === 'landmark' ? '◎' : '⌂'}</td><td>${esc(p.name)}${p.name === Lc.current ? ` <b>${esc(T('(active)'))}</b>` : ''}</td>` +
+    `<td>${fmt(p.lat, 4)}, ${fmt(p.lon, 4)}, ${fmt(p.alt, 0)} m</td><td style="text-align:right;white-space:nowrap">` +
+    (p.own ? `<button class="btn" data-placeedit="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Edit'))}">✎</button> ` +
+             (p.name !== Lc.current ? `<button class="btn" data-placedel="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Delete'))}">✕</button>` : '')
+           : `<span class="hint" title="${esc(T('Defined in config.yaml'))}">config</span>`) + '</td></tr>').join('');
+  $('place-list').innerHTML = '<table style="width:100%"><tbody>' + rows + `</tbody></table><div class="hint">${esc(T('⌂ location · ◎ landmark'))}</div>`;
+  if (placeLayer) {
+    placeLayer.clearLayers();
+    Lc.presets.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 5, color: p.type === 'landmark' ? '#e0a020' : '#3a8ee6'})
+      .bindTooltip(p.name).addTo(placeLayer));
+  }
+}
+$('place-edit').addEventListener('toggle', () => { if ($('place-edit').open) initPlaceMap(); });
+$('place-alt').addEventListener('input', () => { placeAltAuto = $('place-alt').value.trim() === ''; });
+function placeFull(on) {
+  $('place-wrap').classList.toggle('full', on);
+  $('place-fs').textContent = on ? '✕' : '⛶';
+  $('place-fs').title = on ? T('Exit full screen') : T('Full screen');
+  if (placeMap) setTimeout(() => placeMap.invalidateSize(), 50);
+}
+$('place-fs').onclick = () => placeFull(!$('place-wrap').classList.contains('full'));
+$('place-fs-done').onclick = () => placeFull(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('place-wrap').classList.contains('full')) { placeFull(false); e.stopPropagation(); } }, true);
+$('place-gps').onclick = () => {
+  const f = S && S.gps && S.gps.fix;
+  if (!f) { addLocalMsg(T('No GPS position available ({status}).', {status: S && S.gps ? S.gps.status : {t: 'GPS off'}})); return; }
+  placeSetPos(f.lat, f.lon, f.alt); placeAltAuto = false; $('place-elev').textContent = T('Altitude taken from GPS.');
+  if (placeMap) placeMap.setView([f.lat, f.lon], 15);
+  if (!$('place-name').value) $('place-name').value = 'GPS ' + new Date().toLocaleDateString(LOCALE());
+};
+function placeSave(activate) {
+  const f = placeFields();
+  if (!f.name) { addLocalMsg(T('Please enter a name.')); return; }
+  if ([f.lat, f.lon].some(isNaN)) { addLocalMsg(T('Please enter latitude and longitude (click the map, GPS or type).')); return; }
+  if (isNaN(f.alt)) { addLocalMsg(T('Please enter the altitude in metres.')); return; }
+  if (activate) {
+    if (f.type !== 'location') { addLocalMsg(T('Only a location can be activated.')); return; }
+    if (!confirm(T('Save “{name}” and use it as location? NexPlane restarts for this; align again afterwards.', {name: f.name}))) return;
+  }
+  api('place_save', {...f, activate});
+}
+$('place-save').onclick = () => placeSave(false);
+$('place-save-act').onclick = () => placeSave(true);
+$('place-list').addEventListener('click', e => {
+  const d = e.target.closest('[data-placedel]'), ed = e.target.closest('[data-placeedit]');
+  if (d && confirm(T('Delete “{name}”?', {name: d.dataset.placedel}))) api('place_delete', {name: d.dataset.placedel});
+  if (ed && S) {
+    const p = S.location.presets.find(q => q.name === ed.dataset.placeedit); if (!p) return;
+    $('place-name').value = p.name; $('place-type').value = p.type; placeSetPos(p.lat, p.lon, p.alt); placeAltAuto = false; $('place-elev').textContent = '';
+    if (placeMap) placeMap.setView([p.lat, p.lon], 15);
+  }
+});
+
+// ---- Refining the safe area (axis-space view with crosshair) ----
+$('refine-box').addEventListener('toggle', () => api('refine', {action: $('refine-box').open ? 'on' : 'off', alt_m: Number($('opt-blind-alt').value)}));
+$('opt-blind-alt').addEventListener('change', () => { if ($('refine-box').open) api('refine', {action: 'alt', alt_m: Number($('opt-blind-alt').value)}); });
+$('refine-add').onclick = () => api('refine', {action: 'add'});
+$('refine-undo').onclick = () => api('refine', {action: 'undo'});
+$('refine-save').onclick = () => { if (confirm(T('Save the refined safe area? The previous file is kept as .bak.'))) api('refine', {action: 'save'}); };
+$('refine-discard').onclick = () => { if (confirm(T('Discard all unsaved limit points?'))) api('refine', {action: 'discard'}); };
+function telescopeInRed() {
+  // Is the current telescope direction in a blind (red) cell of the reachability grid?
+  if (!REACH || !S || !S.telescope || S.telescope.el < 0) return null;
+  const i = Math.floor(((S.telescope.az % 360) + 360) % 360 / REACH.az_step), j = Math.floor(S.telescope.el / REACH.el_step);
+  const row = REACH.rows[Math.min(REACH.rows.length - 1, Math.max(0, j))];
+  return row ? row[Math.min(row.length - 1, i)] === '0' : null;
+}
+function updateRefinePanel() {
+  const R = S && S.refine;
+  if (!R || !R.active || !R.outline) { $('refine-status').textContent = ''; return; }
+  const P = R.preview || {}, red = telescopeInRed();
+  let t = `${esc(T('Crosshair'))}: ` + (S.telescope ? `Az ${fmt(S.telescope.az, 1)}° El ${fmt(S.telescope.el, 1)}° · ` : '') +
+    (red === true ? `<span class="warn">${esc(T('in a red area'))}</span>` : red === false ? `<span style="color:var(--ok)">${esc(T('reachable direction'))}</span>` : '') +
+    ' · ' + (R.clearance >= 0 ? esc(T('inside the safe area ({d}° to the edge)', {d: fmt(R.clearance, 1)}))
+                              : `<span class="warn">${esc(T('outside the safe area'))}</span>`);
+  t += `<br>${esc(T('Point here'))}: ` + (P.kind === 'outline' || P.kind === 'hole' ? `<b>${esc(msgText(P.msg))}</b>` : `<span class="hint">${esc(msgText(P.msg))}</span>`);
+  if (!R.limits_off && R.clearance >= -0.01) t += `<br><span class="hint">${esc(T('Disable the safe area to move into the blind zone.'))}</span>`;
+  t += `<br>${esc(R.file)}: ` + (R.unsaved ? `<span class="warn">${esc(T('{n} unsaved points', {n: R.unsaved}))}</span>` : esc(T('saved')));
+  $('refine-status').innerHTML = t;
+  $('refine-add').disabled = !(P.kind === 'outline' || P.kind === 'hole');
+  $('refine-undo').disabled = $('refine-save').disabled = $('refine-discard').disabled = !R.unsaved;
+}
+
+// ---- Switch language ----
+$('opt-lang').value = LANG;
+$('opt-lang').onchange = e => setLang(e.target.value);
+setLang(LANG);
+
+// ---- Collapsible cards (state is kept in the browser) ----
+function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+document.querySelectorAll('aside .card').forEach(card => {
+  const h = card.querySelector(':scope > h2'); if (!h) return;
+  const key = 'nexplane-card-' + (card.id || h.firstChild.textContent.trim().toLowerCase());
+  const saved = storeGet(key);
+  const collapsed = saved === null ? card.dataset.collapsedDefault === '1' : saved === '1';
+  card.classList.toggle('collapsed', collapsed);
+  h.addEventListener('click', e => {
+    if (e.target.closest('#n-planes')) return;
+    const now = !card.classList.contains('collapsed');
+    card.classList.toggle('collapsed', now); storeSet(key, now ? '1' : '0');
+  });
+});
+
+// ---- Manual control ----
+const JOG_SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5];
+let jogSpeed = 0.5, jogDir = [0, 0], jogTimer = null;
+$('jogspeed').innerHTML = JOG_SPEEDS.map(v => `<button class="btn ${v === jogSpeed ? 'sel' : ''}" data-v="${v}">${v}</button>`).join('');
+$('jogspeed').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  jogSpeed = Number(b.dataset.v);
+  $('jogspeed').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
+});
+function sendJog() { if (jogDir[0] || jogDir[1]) api('jog', {r1: jogDir[0] * jogSpeed, r2: jogDir[1] * jogSpeed}); }
+function setJog(d) {
+  jogDir = d;
+  if (d[0] || d[1]) { sendJog(); if (!jogTimer) jogTimer = setInterval(sendJog, 150); }
+  else { if (jogTimer) { clearInterval(jogTimer); jogTimer = null; } api('jog_stop'); }
+}
+document.querySelectorAll('[data-jog]').forEach(b => {
+  const d = b.dataset.jog.split(',').map(Number);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('active'); setJog(d); });
+  const up = () => { if (b.classList.contains('active')) { b.classList.remove('active'); setJog([0, 0]); } };
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+});
+const arrows = new Set();
+function arrowsToDir() {
+  return [(arrows.has('ArrowRight') ? 1 : 0) - (arrows.has('ArrowLeft') ? 1 : 0), (arrows.has('ArrowUp') ? 1 : 0) - (arrows.has('ArrowDown') ? 1 : 0)];
+}
+window.addEventListener('blur', () => { if (arrows.size) { arrows.clear(); setJog([0, 0]); } });
+document.addEventListener('keyup', e => {
+  if (!e.key.startsWith('Arrow') || !arrows.has(e.key)) return;
+  arrows.delete(e.key); setJog(arrowsToDir()); e.preventDefault();
+});
+$('btn-allstop').onclick = () => { setJog([0, 0]); api('stop'); };
+$('btn-limoff').onclick = () => {
+  if (!S) return;
+  if (S.limits_off) { api('limits_off', {off: false}); return; }
+  if (confirm(T('Disable the safe area?\n\nOutline and exclusion zones are NO LONGER monitored. The mount can hit ' +
+                'the tripod or pier. Only with a hand on the power switch!\n\nAircraft tracking is blocked until ' +
+                'the safe area is re-enabled.'))) {
+    setJog([0, 0]); api('limits_off', {off: true, confirm: true});
+  }
+};
+$('btn-home').onclick = () => { if (confirm(T('Go to home position?'))) api('home'); };
+$('align-sel').onchange = () => { $('align-sky').style.display = $('align-sel').value === '__sky__' ? '' : 'none'; };
+$('btn-align').onclick = () => {
+  const v = $('align-sel').value;
+  const target = v === '__sky__' ? ($('align-sky').value.trim() ? 'sky:' + $('align-sky').value.trim().toLowerCase() : '') : v;
+  if (!target) { addLocalMsg(T('Please enter an object name.')); return; }
+  const name = target.startsWith('sky:') ? target.slice(4) : target;
+  if (confirm(T('Is the telescope now pointing exactly at {name}? Then it will be aligned on it.', {name}))) api('align', {target});
+};
+
+$('btn-stop').onclick = () => api('stop');
+$('btn-stop2').onclick = () => api('stop');
+$('btn-flip').onclick = () => { if (confirm(T('Test a side change? The mount will rotate the RA axis by about 180°.'))) api('flip_test'); };
+$('btn-reset').onclick = () => api('offset_reset');
+const confirmSyncPoint = () => { if (confirm(T('Is the tracked aircraft centred in the image now? Then it is accepted as a sync point.'))) api('corr_save'); };
+$('btn-corr-save').onclick = confirmSyncPoint;
+$('btn-align-plane').onclick = confirmSyncPoint;
+$('btn-forget').onclick = () => {
+  if (!confirm(T('Forget the current alignment? Sync points, polar error model and correction are discarded, tracking stops.'))) return;
+  const home = confirm(T('Also delete the stored home direction?\n\nRecommended if the mount was not facing north (e.g. tests in the living room). Otherwise NexPlane starts next time with a wrong rough alignment.\n\nOK = delete, Cancel = keep'));
+  api('forget_alignment', {home});
+};
+$('btn-test-set').onclick = () => {
+  const M = (S && S.manual) || {};
+  if (!confirm(T('Set test alignment from the home position? Only for tests at home, inaccurate (a few degrees).') +
+               (M.aligned && !M.test_aligned ? '\n\n' + T('The current alignment will be discarded.') : ''))) return;
+  api('test_align', {action: 'set', confirm: true});
+};
+$('btn-test-flip').onclick = () => api('test_align', {action: 'flip'});
+$('btn-test-end').onclick = () => api('test_align', {action: 'end'});
+$('btn-model-pop').onclick = () => { if (confirm(T('Delete the last sync point?'))) api('model_pop'); };
+$('model-points').addEventListener('click', e => {
+  const b = e.target.closest('[data-delpt]'); if (!b) return;
+  const i = Number(b.dataset.delpt);
+  if (confirm(T('Delete sync point {n}?', {n: i + 1}))) api('model_pop', {index: i});
+});
+$('focal-sel').onchange = e => api('set_focal', {mm: Number(e.target.value)});
+document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
+  const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
+  api('offset', {daz: x * s, del: y * s});
+});
+document.querySelectorAll('[data-gain]').forEach(b => b.onclick = () => {
+  const [w, d] = b.dataset.gain.split(','); api('gain', {which: w, delta: Number(d)});
+});
+$('btn-quit').onclick = () => { if (confirm(T('Quit NexPlane? The mount will be stopped.'))) api('quit'); };
+$('opt-red').onchange = e => { document.body.classList.toggle('red', e.target.checked); document.body.classList.toggle('dark-tiles', !e.target.checked); };
+
+document.addEventListener('keydown', e => {
+  if ((e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') || e.target.tagName === 'SELECT') return;
+  const k = e.key;
+  if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    if (!S || !S.manual || !S.manual.available) return;
+    if (!arrows.has(k)) { arrows.add(k); setJog(arrowsToDir()); }
+    return;
+  }
+  if (k === 'Escape') { setJog([0, 0]); }
+  const small = 0.1, big = 0.5;
+  const moves = {w: [0, small], a: [-small, 0], s: [0, -small], d: [small, 0], k: [0, small], h: [-small, 0], j: [0, -small], l: [small, 0],
+                 W: [0, big], A: [-big, 0], S: [0, -big], D: [big, 0], K: [0, big], H: [-big, 0], J: [0, -big], L: [big, 0]};
+  const gains = {r: ['kp', 0.01], f: ['kp', -0.01], t: ['ki', 0.01], g: ['ki', -0.01], y: ['kd', 0.01], u: ['kd', -0.01]};
+  if (k === 'Escape') api('stop');
+  else if (moves[k]) api('offset', {daz: moves[k][0], del: moves[k][1]});
+  else if (k === 'q' || k === 'Q' || k === 'o' || k === 'O') api('offset_reset');
+  else if (gains[k.toLowerCase()]) { const [w, d] = gains[k.toLowerCase()]; api('gain', {which: w, delta: d}); }
+  else return;
+  e.preventDefault();
+});
+
+// ---------------------------------------------------------------- Sky map
+const sky = $('sky');
+const ctx = sky.getContext('2d');
+let geo = null;   // {cx, cy, R}
+
+function project(az, el) {
+  if (!geo || el < -5) return null;
+  const r = (90 - el) / 95 * geo.R;
+  const mirror = $('opt-mirror').checked ? 1 : -1;     // looking up: east on the left
+  return [geo.cx + mirror * r * Math.sin(az * RAD), geo.cy - r * Math.cos(az * RAD)];
+}
+
+function skyCirclePts(center, radiusDeg, n = 180) {
+  const la1 = center.el * RAD, lo1 = center.az * RAD, d = radiusDeg * RAD, pts = [];
+  for (let i = 0; i <= n; i++) {
+    const b = i / n * 2 * Math.PI;
+    const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(b));
+    const lo2 = lo1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+    pts.push({az: lo2 / RAD, el: la2 / RAD});
+  }
+  return pts;
+}
+function strokePath(pts, color, width = 1, dash = []) {
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.beginPath();
+  let pen = false;
+  for (const p of pts) {
+    const xy = project(p.az, p.el);
+    if (!xy) { pen = false; continue; }
+    if (pen) ctx.lineTo(xy[0], xy[1]); else ctx.moveTo(xy[0], xy[1]);
+    pen = true;
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function cross(x, y, s, color, w = 2) {
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath();
+  ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
+}
+function text(t, x, y, color, font = '12px system-ui', align = 'left') {
+  ctx.font = font; ctx.textAlign = align; ctx.lineWidth = 3; ctx.strokeStyle = css('--bg'); ctx.strokeText(t, x, y);
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+const blindCanvas = document.createElement('canvas');
+let blindKey = '';
+function renderBlindLayer(w, h, dpr) {
+  const key = [w, h, dpr, $('opt-mirror').checked, document.body.classList.contains('red'), reachVersion, !!blindEnabled()].join('|');
+  if (key === blindKey) return;
+  blindKey = key;
+  blindCanvas.width = Math.round(w * dpr); blindCanvas.height = Math.round(h * dpr);
+  const b = blindCanvas.getContext('2d');
+  b.setTransform(dpr, 0, 0, dpr, 0, 0); b.clearRect(0, 0, w, h);
+  if (!blindEnabled()) return;
+  b.fillStyle = css('--blind');
+  b.beginPath();   // one shared path so that no seams appear between the cells
+  const as = REACH.az_step, es = REACH.el_step;
+  REACH.rows.forEach((row, j) => {
+    const e0 = j * es, e1 = Math.min(90, (j + 1) * es);
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] !== '0') continue;
+      let k = i; while (k + 1 < row.length && row[k + 1] === '0') k++;   // contiguous cells
+      const a0 = i * as, a1 = (k + 1) * as, pts = [];
+      for (let a = a0; a <= a1 + 1e-9; a += Math.min(as, a1 - a0)) pts.push(project(a, e0));
+      for (let a = a1; a >= a0 - 1e-9; a -= Math.min(as, a1 - a0)) pts.push(project(a, e1));
+      if (pts.every(Boolean)) { pts.forEach((p, n) => n ? b.lineTo(p[0], p[1]) : b.moveTo(p[0], p[1])); b.closePath(); }
+      i = k;
+    }
+  });
+  b.fill('nonzero');
+}
+
+function drawSky() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = sky.clientWidth, h = sky.clientHeight;
+  if (w < 80 || h < 80) { requestAnimationFrame(drawSky); return; }
+  if (sky.width !== Math.round(w * dpr) || sky.height !== Math.round(h * dpr)) { sky.width = Math.round(w * dpr); sky.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, w, h);
+  geo = {cx: w / 2, cy: h / 2, R: Math.min(w, h) / 2 - 28};
+  const {cx, cy, R} = geo;
+  renderBlindLayer(w, h, dpr);
+  ctx.drawImage(blindCanvas, 0, 0, w, h);
+
+  // Grid
+  for (const el of [0, 30, 60]) {
+    const r = (90 - el) / 95 * R;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.strokeStyle = el === 0 ? css('--horizon') : css('--grid'); ctx.lineWidth = el === 0 ? 2 : 1; ctx.stroke();
+    if (el) text(el + '°', cx + 4, cy - r + 13, css('--muted'), '11px system-ui');
+  }
+  for (const az of [0, 45, 90, 135, 180, 225, 270, 315]) strokePath([{az, el: 0}, {az, el: 89.9}], css('--grid'));
+  const dirs = [[T('N'), 0], [T('E'), 90], [T('S'), 180], [T('W'), 270]];
+  for (const [n, az] of dirs) { const xy = project(az, -3.2); text(n, xy[0], xy[1] + 4, css('--text'), 'bold 14px system-ui', 'center'); }
+  if (!S) { requestAnimationFrame(drawSky); return; }
+
+  // Equator and pole
+  if (S.pole) {
+    strokePath(skyCirclePts(S.pole, 90), css('--eq'), 1.2);
+    strokePath(skyCirclePts(S.pole, 3, 48), css('--eq'), 1.2);
+    const xy = project(S.pole.az, S.pole.el); if (xy) text(T('Pole'), xy[0] + 10, xy[1] + 4, css('--eq'), '11px system-ui');
+  }
+  // Sun and moon
+  if (S.sun) {
+    for (const r of [5, 10, 15, 20]) strokePath(skyCirclePts(S.sun, r), css('--sun'), r === 20 ? 2 : 1, r === 20 ? [] : [4, 4]);
+    const xy = project(S.sun.az, S.sun.el); if (xy) { ctx.fillStyle = css('--sun'); ctx.beginPath(); ctx.arc(xy[0], xy[1], 6, 0, 7); ctx.fill(); text(T('Sun'), xy[0] + 9, xy[1] - 8, css('--sun')); }
+  }
+  if (S.moon) { const xy = project(S.moon.az, S.moon.el); if (xy) { ctx.fillStyle = css('--moon'); ctx.beginPath(); ctx.arc(xy[0], xy[1], 5, 0, 7); ctx.fill(); text(T('Moon'), xy[0] + 8, xy[1] - 7, css('--moon')); } }
+
+  // Aircraft with trails
+  for (const p of S.planes) {
+    const tracked = p.hex === S.tracked;
+    const color = tracked ? css('--track') : p.in_space ? css('--sat') : css('--plane');
+    const tr = trails.get(p.hex);
+    if (tr && tr.length > 1) { ctx.globalAlpha = .45; strokePath(tr, color, 1.5); ctx.globalAlpha = 1; }
+    const xy = project(p.az, p.el); if (!xy) continue;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xy[0], xy[1], tracked || p.hex === hoverHex ? 5 : 3.5, 0, 7); ctx.fill();
+    if (tracked || p.hex === hoverHex || p.el > 10) text(label(p), xy[0] + 7, xy[1] - 6, color, tracked ? 'bold 13px system-ui' : '11px system-ui');
+  }
+  if (S.fixed_target) { const xy = project(S.fixed_target.az, S.fixed_target.el); if (xy) { ctx.strokeStyle = css('--track'); ctx.lineWidth = 2; ctx.strokeRect(xy[0] - 8, xy[1] - 8, 16, 16); text(T('Test point'), xy[0] + 11, xy[1] - 9, css('--track')); } }
+  if (S.tracked_now) { const xy = project(S.tracked_now.az, S.tracked_now.el); if (xy) { ctx.beginPath(); ctx.arc(xy[0], xy[1], 9, 0, 7); ctx.strokeStyle = css('--track2'); ctx.lineWidth = 2; ctx.stroke(); } }
+  // Telescope
+  if (S.telescope) {
+    const xy = project(S.telescope.az, Math.max(S.telescope.el, -5));
+    const Rf = S.refine || {}, rcol = Rf.active ? (Rf.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope');
+    if (xy) { cross(xy[0], xy[1], Rf.active ? 16 : 10, rcol); strokePath(skyCirclePts(S.telescope, 1.5, 40), rcol, Rf.active ? 3 : 2); }
+    if (S.telescope.el < 0) text(T('Telescope points below the horizon'), 12, h - 12, css('--warn'), 'bold 13px system-ui');
+  }
+  text($('opt-mirror').checked ? T('View from above (like a map)') : T('Looking up: north at the top, east on the left'), 12, 20, css('--muted'), '12px system-ui');
+  requestAnimationFrame(drawSky);
+}
+
+function nearestPlaneAt(x, y) {
+  let best = null, bd = 22;
+  for (const p of (S ? S.planes : [])) {
+    const xy = project(p.az, p.el); if (!xy) continue;
+    const d = Math.hypot(xy[0] - x, xy[1] - y); if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+sky.addEventListener('mousemove', e => { const p = nearestPlaneAt(e.offsetX, e.offsetY); hoverHex = p ? p.hex : null; sky.style.cursor = p ? 'pointer' : 'default'; });
+sky.addEventListener('click', e => { const p = nearestPlaneAt(e.offsetX, e.offsetY); if (p) api('track', {hex: p.hex}); });
+
+// ---------------------------------------------------------------- Ground map
+let map = null, mapLayers = null, markers = new Map(), centered = false;
+function loadLeaflet() {
+  return new Promise((ok, fail) => {
+    if (window.L) return ok();
+    const s = document.createElement('script'); s.src = '/static/leaflet/leaflet.js';
+    s.onload = ok; s.onerror = fail; document.head.appendChild(s);
+  });
+}
+async function initMap() {
+  if (map) return true;
+  try { await loadLeaflet(); } catch (e) { $('maperr').style.display = 'block'; return false; }
+  map = L.map('map', {zoomControl: true, attributionControl: true}).setView([S ? S.observer.lat : 51, S ? S.observer.lon : 10], 9);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+  mapLayers = {static: L.layerGroup().addTo(map), blind: L.layerGroup().addTo(map), dynamic: L.layerGroup().addTo(map), planes: L.layerGroup().addTo(map)};
+  return true;
+}
+function destination(lat, lon, bearingDeg, distM) {
+  const R = 6371000, d = distM / R, b = bearingDeg * RAD, la1 = lat * RAD, lo1 = lon * RAD;
+  const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(b));
+  const lo2 = lo1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+  return [la2 / RAD, lo2 / RAD];
+}
+function planeIcon(p, tracked) {
+  const c = tracked ? css('--track') : css('--plane');
+  const svg = `<svg width="26" height="26" viewBox="-13 -13 26 26" style="transform:rotate(${p.track_deg}deg)">
+    <path d="M0,-11 L2,-3 L10,2 L10,4 L2,2 L1.5,8 L4,10 L4,11.5 L0,10.5 L-4,11.5 L-4,10 L-1.5,8 L-2,2 L-10,4 L-10,2 L-2,-3 Z"
+      fill="${c}" stroke="${css('--bg')}" stroke-width="1"/></svg>`;
+  return L.divIcon({className: 'plane-icon', html: svg, iconSize: [26, 26], iconAnchor: [13, 13]});
+}
+let mapBlindKey = '';
+function updateBlindMap() {
+  const alt = Number($('opt-blind-alt').value);
+  const key = [reachVersion, alt, !!blindEnabled(), document.body.classList.contains('red')].join('|');
+  if (key === mapBlindKey) return;
+  mapBlindKey = key;
+  mapLayers.blind.clearLayers();
+  if (!blindEnabled()) return;
+  const o = S.observer, Re = 6371000, dh = alt - (o.alt_m || 0);
+  const as = REACH.az_step, es = REACH.el_step, rows = REACH.rows;
+  const color = getComputedStyle(document.body).getPropertyValue('--blind').trim();
+  const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+  const shapes = [];   // all areas as one multi-polygon so that no seams appear
+  for (let i = 0; i < rows[0].length; i++) {
+    const a0 = i * as - 0.25, a1 = (i + 1) * as + 0.25;   // slight overlap to avoid seams
+    let start = null;
+    const step = 2000;
+    for (let d = 500; ; d += step) {
+      const el = elAt(d);
+      const inSky = el >= 0 && d <= 450000;
+      const j = Math.min(rows.length - 1, Math.max(0, Math.floor(el / es)));
+      const blind = inSky && rows[j][i] === '0';
+      if (blind && start === null) start = d;
+      if ((!blind || !inSky) && start !== null) {
+        const d0 = start, d1 = d, mid = (a0 + a1) / 2;
+        shapes.push([[destination(o.lat, o.lon, a0, d0), destination(o.lat, o.lon, mid, d0), destination(o.lat, o.lon, a1, d0),
+                      destination(o.lat, o.lon, a1, d1), destination(o.lat, o.lon, mid, d1), destination(o.lat, o.lon, a0, d1)]]);
+        start = null;
+      }
+      if (!inSky) break;
+    }
+  }
+  if (shapes.length) L.polygon(shapes, {stroke: false, fillColor: color, fillOpacity: 1, fillRule: 'nonzero',
+                                        interactive: false}).addTo(mapLayers.blind);
+}
+
+function updateMap() {
+  if (!map || !S) return;
+  updateBlindMap();
+  const o = S.observer;
+  if (!centered) {
+    map.setView([o.lat, o.lon], 9); centered = true;
+    L.circleMarker([o.lat, o.lon], {radius: 6, color: css('--scope'), fillOpacity: 1}).bindTooltip(() => T('Location')).addTo(mapLayers.static);
+    for (const km of [10, 25, 50, 100]) {
+      L.circle([o.lat, o.lon], {radius: km * 1000, color: css('--muted'), weight: 1, fill: false, dashArray: '4 6'}).addTo(mapLayers.static);
+      L.marker(destination(o.lat, o.lon, 0, km * 1000), {icon: L.divIcon({className: '', html: `<span style="color:var(--muted);font-size:11px;white-space:nowrap">${km} km</span>`})}).addTo(mapLayers.static);
+    }
+  }
+  mapLayers.dynamic.clearLayers();
+  if (S.telescope) L.polyline([[o.lat, o.lon], destination(o.lat, o.lon, S.telescope.az, 150000)], {color: css('--scope'), weight: 2}).bindTooltip(T('Telescope direction')).addTo(mapLayers.dynamic);
+  // Crosshair where the line of sight reaches the selected flight altitude (same projection as the red areas)
+  if (S.telescope && S.telescope.el > 0) {
+    const alt = Number($('opt-blind-alt').value), Re = 6371000, dh = alt - (o.alt_m || 0);
+    const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+    let lo = 1, hi = 450000;
+    if (elAt(hi) < S.telescope.el) {
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (elAt(mid) > S.telescope.el) lo = mid; else hi = mid; }
+      const R = S.refine || {}, on = !!R.active;
+      const col = on ? (R.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope'), sz = on ? 44 : 26;
+      const svg = `<svg width="${sz}" height="${sz}" viewBox="-22 -22 44 44" style="overflow:visible"><g stroke="${col}" stroke-width="${on ? 3 : 2}" fill="none">` +
+        `<circle r="9"/><path d="M-20 0H-5M5 0H20M0 -20V-5M0 5V20"/></g></svg>`;
+      L.marker(destination(o.lat, o.lon, S.telescope.az, lo), {interactive: false, zIndexOffset: 1000,
+        icon: L.divIcon({className: '', html: svg, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2]})}).addTo(mapLayers.dynamic);
+    }
+  }
+  const seen = new Set();
+  for (const p of S.planes) {
+    if (p.in_space || p.lat == null) continue;
+    seen.add(p.hex);
+    const tracked = p.hex === S.tracked;
+    const tr = trails.get(p.hex);
+    if (tr && tr.length > 1) L.polyline(tr.map(q => [q.lat, q.lon]), {color: tracked ? css('--track') : css('--plane'), weight: 2, opacity: .4}).addTo(mapLayers.dynamic);
+    if (tracked) L.polyline([[o.lat, o.lon], [p.lat, p.lon]], {color: css('--track'), weight: 2, dashArray: '6 6'}).addTo(mapLayers.dynamic);
+    let m = markers.get(p.hex);
+    const tip = `${label(p)}  ${fmt(p.alt_m, 0)} m`;
+    if (!m) {
+      m = L.marker([p.lat, p.lon], {icon: planeIcon(p, tracked)}).addTo(mapLayers.planes);
+      m.bindTooltip(tip, {permanent: true, direction: 'right', offset: [12, 0], className: 'lbl'});
+      m.on('click', () => api('track', {hex: p.hex}));
+      markers.set(p.hex, m);
+    } else {
+      m.setLatLng([p.lat, p.lon]); m.setIcon(planeIcon(p, tracked)); m.setTooltipContent(tip);
+    }
+    m.setOpacity(p.el < 5 ? 0.45 : 1);
+  }
+  for (const [hex, m] of markers) if (!seen.has(hex)) { mapLayers.planes.removeLayer(m); markers.delete(hex); }
+}
+
+async function setView(v) {
+  view = v;
+  $('tab-sky').classList.toggle('active', v === 'sky'); $('tab-map').classList.toggle('active', v === 'map');
+  $('sky').style.display = v === 'sky' ? 'block' : 'none';
+  $('map').style.display = v === 'map' ? 'block' : 'none';
+  $('maperr').style.display = 'none';
+  if (v === 'map' && await initMap()) { map.invalidateSize(); updateMap(); }
+}
+$('tab-sky').onclick = () => setView('sky');
+$('tab-map').onclick = () => setView('map');
+
+poll();
+requestAnimationFrame(drawSky);
+</script>
+</body>
+</html>
