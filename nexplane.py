@@ -9,9 +9,13 @@ import time
 import traceback
 import yaml
 
+import astropy.units as units
+
 from typing import Any
 
 import align
+import axis_limits
+import eq_flip
 import astronomical
 import config
 import gui
@@ -111,9 +115,20 @@ def main() -> None:
 
     gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
+    telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
-        telescope = align.setup_telescope_interface(args, serial_iface)
+        try:
+            telescope = align.setup_telescope_interface(args, serial_iface)
+        except nexstar.CommError as e:
+            msg = (f'The mount does not answer ({str(e) or "empty response"}). Please check: is the motor '
+                   'controller switched on and powered? Is the USB cable plugged in? Was telescope_server '
+                   '(re)started AFTER switching on the controller, and on the right port (ls /dev/ttyUSB*)? '
+                   'Is no other software (SynScan app) connected? Then restart NexPlane.')
+            raise SystemExit('\n' + msg)
+
+        # Enable axis soft limits if configured in config.yaml.
+        limit_guard = axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
 
         # Tracking controller, sends commands to the telescope.
         target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
@@ -152,6 +167,25 @@ def main() -> None:
                 ra_cal = 0.0
                 dec_cal = 0.0
 
+        # Meridian flip (EQ mode with Sky-Watcher mount only).
+        pointing: eq_flip.EqPointing | None = None
+        limits_data: dict[str, Any] | None = None
+        if args.mount_mode == 'eq' and isinstance(telescope, skywatcher.SkyWatcher):
+            pointing = eq_flip.EqPointing(
+                telescope, ra_cal, dec_cal, limit_guard,
+                auto_flip=bool(config_data.get('meridian_flip', True)),
+                max_rate_deg_s=float(config_data.get('max_slew_degrees_per_second', 5.0)))
+            if limit_guard is None:
+                print('No safe area configured: the automatic meridian flip is off.')
+            else:
+                limits_data = {'home_deg': {1: limit_guard.home[0] * 180 / math.pi,
+                                            2: limit_guard.home[1] * 180 / math.pi}}
+                warning = pointing.check_home(limits_data['home_deg'][2] / 180 * math.pi) \
+                    if (args.landmark or args.alignment) else None
+                if warning:
+                    print(warning)
+        last_target_key: str | None = None
+
         # Main loop
         warn_comm_failure = False
         while True:
@@ -167,6 +201,10 @@ def main() -> None:
                 if args.mount_mode == 'altaz':
                     scope_azm_raw, scope_alt_raw = telescope.get_azm_alt()
                     scope_azm_alt = (util.wrap_rad(scope_azm_raw + azm_cal, 0), util.wrap_rad(scope_alt_raw + alt_cal, 0))
+                elif pointing is not None:
+                    scope_ra, scope_dec, scope_side = pointing.scope()
+                    scope_alt, scope_azm = util.radec_to_altaz(scope_ra, scope_dec, observatory_location, util.get_current_time())
+                    scope_azm_alt = (scope_azm, scope_alt)
                 else:
                     scope_ra_raw, scope_dec_raw = telescope.get_ra_dec()
                     scope_ra = util.wrap_rad(scope_ra_raw + ra_cal, -math.pi)
@@ -182,6 +220,9 @@ def main() -> None:
 
                 # Receive new user inputs from the GUI.
                 tracked_plane_hex_id = gui_airplanes.get_tracked_plane()
+                if tracked_plane_hex_id != last_target_key and pointing is not None:
+                    pointing.reset()
+                last_target_key = tracked_plane_hex_id
                 az_offset, el_offset = gui_offset_reader.get_offsets()
                 kp, ki, kd, gain_changes = gui_gain_reader.get_gains()
 
@@ -214,8 +255,20 @@ def main() -> None:
                             unwrap(tracked_plane.az.value) + az_offset,
                             observatory_location,
                             util.get_current_time())
-                        target_tracker.go(util.wrap_rad(tracked_plane_ra - ra_cal, scope_ra_raw - math.pi),
-                                          util.wrap_rad(tracked_plane_dec - dec_cal, scope_dec_raw - math.pi))
+                        if pointing is not None:
+                            plane_now = planes[tracked_plane_hex_id]
+
+                            def future_radec(dt: float, plane: Any = plane_now) -> tuple[float, float]:
+                                fut = plane.extrapolate(time.monotonic_ns() + int(dt * 1e9))
+                                return util.altaz_to_radec(unwrap(fut.el.value) + el_offset,
+                                                           unwrap(fut.az.value) + az_offset,
+                                                           observatory_location,
+                                                           util.get_current_time() + dt * units.s)
+
+                            pointing.command(target_tracker, tracked_plane_ra, tracked_plane_dec, future=future_radec)
+                        else:
+                            target_tracker.go(util.wrap_rad(tracked_plane_ra - ra_cal, scope_ra_raw - math.pi),
+                                              util.wrap_rad(tracked_plane_dec - dec_cal, scope_dec_raw - math.pi))
                 else:
                     # If no data is available for the target, stop tracking and inform the GUI of that fact.
                     target_tracker.stop()
@@ -251,7 +304,11 @@ def main() -> None:
         pass
     finally:
         # Stop the telescope and clean up.
-        telescope.slew_azmalt(0, 0)
+        if telescope is not None:
+            try:
+                telescope.slew_azmalt(0, 0)
+            except Exception:
+                pass
         sys.stdout.flush()
         sys.stderr.flush()
         serial_iface.close()
