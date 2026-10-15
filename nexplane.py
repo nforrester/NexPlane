@@ -12,6 +12,7 @@ import yaml
 from typing import Any
 
 import align
+import axis_limits
 import astronomical
 import config
 import gui
@@ -111,9 +112,20 @@ def main() -> None:
 
     gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
+    telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
-        telescope = align.setup_telescope_interface(args, serial_iface)
+        try:
+            telescope = align.setup_telescope_interface(args, serial_iface)
+        except nexstar.CommError as e:
+            msg = (f'The mount does not answer ({str(e) or "empty response"}). Please check: is the motor '
+                   'controller switched on and powered? Is the USB cable plugged in? Was telescope_server '
+                   '(re)started AFTER switching on the controller, and on the right port (ls /dev/ttyUSB*)? '
+                   'Is no other software (SynScan app) connected? Then restart NexPlane.')
+            raise SystemExit('\n' + msg)
+
+        # Enable axis soft limits if configured in config.yaml (the guard hooks into the telescope object).
+        axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
 
         # Tracking controller, sends commands to the telescope.
         target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
@@ -251,7 +263,11 @@ def main() -> None:
         pass
     finally:
         # Stop the telescope and clean up.
-        telescope.slew_azmalt(0, 0)
+        if telescope is not None:
+            try:
+                telescope.slew_azmalt(0, 0)
+            except Exception:
+                pass
         sys.stdout.flush()
         sys.stderr.flush()
         serial_iface.close()
