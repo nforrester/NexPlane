@@ -425,6 +425,45 @@ the mount then the alignment data is invalidated.
 
     $ ./nexplane.py --alignment align.yaml
 
+## Optional features
+
+These features are off or invisible unless you use them. Most of them were developed for a
+Sky-Watcher EQ5 in equatorial mode, controlled from a browser.
+
+### Axis soft limits (Sky-Watcher)
+
+A long tube on an equatorial mount can hit the tripod or the pier. NexPlane can keep a
+Sky-Watcher mount inside a taught area of axis positions. Every motion command is checked:
+both axes are slowed down together before the edge of the area (minus a safety margin), and
+the mount is stopped at once if an axis moves against the commanded direction.
+
+The area is a polygon in the two raw axis angles relative to the position at power-on, so it
+does not depend on alignment, but it is only valid if the mount is switched on at the same
+home position every time. Teach it with `teach_limits.py`:
+
+1. Put the mount into its home position (e.g. counterweight down, tube toward the pole), then
+   switch it on.
+2. Start `telescope_server.py` (not needed with `--hootl`), then
+   `./teach_limits.py --telescope-protocol skywatcher-mount-head-usb`.
+3. Drive once around the edge of the safe area with the arrow keys and press `m` at each
+   corner, in order. Press `g` for an SVG preview, `s` to save, `q` to quit.
+
+Then enable it in `config.yaml`:
+
+```yaml
+axis_limits:
+    file: limits.yaml
+    margin_degrees: 3.0           # distance kept from the taught edge
+    lookahead_seconds: 1.0        # how far ahead the motion is predicted
+    require_home_at_start: true   # refuse to start away from the taught home position
+    home_tolerance_degrees: 1.0
+    wrong_way_trip_degrees: 0.5   # emergency stop if an axis moves the wrong way this far
+```
+
+`./teach_limits.py --check` loads the saved area and enables the guard, so you can test it by
+driving into the edge. This is a software protection: it does not replace supervision or a
+reachable power switch.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
