@@ -40,6 +40,7 @@ def fg(cmd: list[str]) -> None:
 def run_mypy() -> None:
     fg([
         'mypy',
+        'aer_csv.py',
         'align.py',
         'dump_config.py',
         'nexplane.py',

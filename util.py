@@ -137,6 +137,13 @@ def ned_between_earth_locations(to_loc: coords.EarthLocation, from_loc: coords.E
             numpy.dot(rel_gc, d_unit),
         ])
 
+def earth_location_plus_ned(from_loc: coords.EarthLocation, ned_m: numpy.ndarray) -> coords.EarthLocation:
+    '''Offset an EarthLocation by a North East Down (NED) vector in meters.'''
+    f_gc = numpy.array([a.to(units.m).value for a in from_loc.to_geocentric()])
+    n_unit, e_unit, d_unit = ned_unit_vectors_at_earth_location(from_loc)
+    t_gc = f_gc + n_unit * ned_m[0] + e_unit * ned_m[1] + d_unit * ned_m[2]
+    return coords.EarthLocation.from_geocentric(x=t_gc[0], y=t_gc[1], z=t_gc[2], unit='m')
+
 def configured_earth_location(config_data: dict[str, Any], name: str) -> coords.EarthLocation:
     '''Return an EarthLocation for the requested location from the provided config data.'''
     lat = config_data['locations'][name]['lat_degrees']
